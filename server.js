@@ -15,6 +15,8 @@ var crossdomainPolicy = (
                          + "<allow-access-from domain=\"*\" to-ports=\"8000,8001\"/>\n"
                          + "</cross-domain-policy>\n");
 
+
+// First server is HTTP, for serving the swf (don't think crossdomain needed here)
 http.createServer(function (request, response) {
     sys.log(request.method + " " + request.url);
     if (request.method == 'GET' && request.url == "/crossdomain.xml") {
@@ -33,12 +35,19 @@ http.createServer(function (request, response) {
     }
 }).listen(8000);
 
+
+// Second server is plain TCP, for the game communication. It also has
+// to serve the cross-domain policy file.
 net.createServer(function (socket) {
     var bytesRead = 0;
+    var lastLogTime = new Date().getTime();
     function log(s) {
-      sys.log("socket[" + socket.remoteAddress + "/" + socket.remotePort + "/" + socket.readyState + "] " + s);
+        var thisLogTime = new Date().getTime();
+        sys.log("+" + (thisLogTime - lastLogTime) + " socket[" + socket.remoteAddress + "/" + socket.remotePort + "/" + socket.readyState + "] " + s);
+        lastLogTime = thisLogTime;
     }
     socket.setEncoding("binary");
+    socket.setNoDelay();
     socket.addListener("connect", function () {
         log("connect");
       });
@@ -58,4 +67,5 @@ net.createServer(function (socket) {
         socket.close();
       });
   }).listen(8001, "localhost");
-sys.log('Server running at http://127.0.0.1:8000/ and tcp:8001');
+
+sys.log('Servers running at http://127.0.0.1:8000/ and tcp:8001');

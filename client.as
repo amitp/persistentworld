@@ -12,6 +12,8 @@ package {
     public var socket:Socket = new Socket();
     
     public function client() {
+      stage.frameRate = 60;
+      
       graphics.beginFill(0x00ff00);
       graphics.drawRect(0, 0, 200, 200);
       graphics.endFill();
@@ -36,7 +38,8 @@ package {
                               });
       socket.addEventListener(ProgressEvent.SOCKET_DATA,
                               function (e:ProgressEvent):void {
-                                Debug.trace("SOCKET DATA", e);
+                                // Debug.trace("SOCKET DATA", e, socket.readUTFBytes(socket.bytesAvailable));
+                                socket.writeUTFBytes("testing round trip speed");
                               });
 
       Debug.trace("Connecting");
