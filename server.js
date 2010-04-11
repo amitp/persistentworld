@@ -40,12 +40,19 @@ http.createServer(function (request, response) {
 // to serve the cross-domain policy file.
 net.createServer(function (socket) {
     var bytesRead = 0;
+    var buffer = "";
+    
     var lastLogTime = new Date().getTime();
-    function log(s) {
+    function log(msg) {
         var thisLogTime = new Date().getTime();
-        sys.log("+" + (thisLogTime - lastLogTime) + " socket[" + socket.remoteAddress + "/" + socket.remotePort + "/" + socket.readyState + "] " + s);
+        sys.log("+" + (thisLogTime - lastLogTime) + " socket[" + socket.remoteAddress + ":" + socket.remotePort + "] " + msg);
         lastLogTime = thisLogTime;
     }
+
+    function handleMessage(msg) {
+        log('handle message ' + JSON.parse(msg));
+    }
+    
     socket.setEncoding("binary");
     socket.setNoDelay();
     
@@ -58,9 +65,22 @@ net.createServer(function (socket) {
             socket.write(crossdomainPolicy);
             socket.close();
         } else {
-          bytesRead += data.length;
-          log("data:" + JSON.stringify(data));
-          socket.write(JSON.stringify(data)+"\r\n");
+            log("data:" + data.length + " buffer:" + buffer.length);
+            bytesRead += data.length;
+            buffer += data;
+
+            var checkEom = buffer.indexOf('\0');
+            while (checkEom >= 0) {
+                if (checkEom > 0) {
+                    handleMessage(buffer.slice(0, checkEom));
+                }
+                buffer = buffer.slice(checkEom+1);
+                checkEom = buffer.indexOf('\0');
+            }
+            socket.write(JSON.stringify({response: 'ok'})+'\0'+JSON.stringify({second: 'ok'}));
+            setTimeout(function () {
+                socket.write('\0');
+            }, 300);
         }
     });
     socket.addListener("end", function () {
