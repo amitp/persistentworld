@@ -36,6 +36,10 @@ http.createServer(function (request, response) {
 }).listen(8000);
 
 
+// Server state
+var clientPositions = {};  // clientId -> {x: y:}
+
+
 // Second server is plain TCP, for the game communication. It also has
 // to serve the cross-domain policy file.
 net.createServer(function (socket) {
@@ -49,8 +53,37 @@ net.createServer(function (socket) {
         lastLogTime = thisLogTime;
     }
 
-    function handleMessage(msg) {
-        log('handle message ' + JSON.parse(msg));
+    function writeMessage(message) {
+        message = JSON.stringify(message);
+        log('sending ' + message);
+        socket.write(message + '\0');
+    }
+    
+    function handleMessage(message) {
+        log('handle message ' + message);
+        try {
+            message = JSON.parse(message);  // TODO: move out
+        } catch (e) {
+            log('error ' + e.message + ' while parsing: ' + JSON.stringify(message));
+            return;
+        }
+        
+        if (message.type == 'mouse_move') {
+            // NOTE: we're temporarily using remotePort as the client id
+            clientPositions[socket.remotePort] = {x: message.x, y: message.y};
+        } else if (message.type == 'ping') {
+            respondWithGlobalState(message.timestamp);
+        } else {
+            log('  -- unknown message type');
+        }
+    }
+
+    function respondWithGlobalState(clientTimestamp) {
+        writeMessage({
+            type: 'all_positions',
+            timestamp: clientTimestamp,
+            positions: clientPositions
+        });
     }
     
     socket.setEncoding("binary");
@@ -65,7 +98,6 @@ net.createServer(function (socket) {
             socket.write(crossdomainPolicy);
             socket.close();
         } else {
-            log("data:" + data.length + " buffer:" + buffer.length);
             bytesRead += data.length;
             buffer += data;
 
@@ -77,16 +109,14 @@ net.createServer(function (socket) {
                 buffer = buffer.slice(checkEom+1);
                 checkEom = buffer.indexOf('\0');
             }
-            socket.write(JSON.stringify({response: 'ok'})+'\0'+JSON.stringify({second: 'ok'}));
-            setTimeout(function () {
-                socket.write('\0');
-            }, 300);
         }
     });
     socket.addListener("end", function () {
         log("end");
+        // TODO: need to track this socket's id, and remove from clientPositions here, or on timeout
+        delete clientPositions[socket.remotePort];
         socket.close();
     });
-}).listen(8001, "localhost");
+}).listen(8001);
 
 sys.log('Servers running at http://127.0.0.1:8000/ and tcp:8001');

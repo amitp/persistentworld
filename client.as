@@ -14,21 +14,25 @@ package {
   
   public class client extends Sprite {
     public var socket:Socket = new Socket();
+    public var clientId:String = String(1000 + Math.floor(Math.random() * 9000));
+    public var pingTimer:Timer = new Timer(1000/10, 0);
+
+    public static var serverAddress:String = null;
+    public static var serverPort:int = 8001;
     
     public function client() {
-      stage.frameRate = 5;
-      
-      graphics.beginFill(0x00ff00);
-      graphics.drawRect(0, 0, 200, 200);
-      graphics.endFill();
+      stage.frameRate = 30;
       
       addChild(new Debug(this));
 
       var buffer:ByteArray = new ByteArray();
+
+      stage.addEventListener(Event.ACTIVATE, onActivate);
+      stage.addEventListener(Event.DEACTIVATE, onDeactivate);
       
       socket.addEventListener(Event.CONNECT, function (e:Event):void {
           Debug.trace("CONNECT");
-          socket.writeByte(0);
+          // socket.writeByte(0);
         });
       socket.addEventListener(Event.CLOSE, function (e:Event):void {
           Debug.trace("CLOSE");
@@ -44,7 +48,7 @@ package {
       socket.addEventListener(ProgressEvent.SOCKET_DATA,
                               function (e:ProgressEvent):void {
                                 var i:int = buffer.length;
-                                Debug.trace("SOCKET DATA", socket.bytesAvailable, "buffer:", buffer.length);
+
                                 socket.readBytes(buffer, buffer.length, socket.bytesAvailable);
                                 for (; i <= buffer.length; i++) {
                                   if (buffer[i] == 0) {
@@ -61,28 +65,53 @@ package {
                                   // buffered).
                                   buffer.clear();
                                 }
-                                
-                                socket.writeUTFBytes(JSON.encode({foo: 5}));
-                                socket.writeByte(0);
-                                socket.writeUTFBytes(JSON.encode({bar: 3}));
-                                socket.writeByte(0);
                               });
 
       Debug.trace("Connecting");
-      socket.connect("localhost", 8001);
+      socket.connect(serverAddress, serverPort);
       
-      /*
-      var timer:Timer = new Timer(1000/60, 0);
-      timer.addEventListener(TimerEvent.TIMER, jitter);
-      timer.start();
-      */
+      pingTimer.addEventListener(TimerEvent.TIMER, onTimer);
     }
 
-    public function handleMessage(msg:String):void {
-      Debug.trace("HANDLE MESSAGE", msg);
+    public function onActivate(e:Event):void {
+      Debug.trace("ACTIVATE");
+      // NOTE: the Debug panel is eating up the mouse events, so we grab from stage instead
+      stage.addEventListener(MouseEvent.MOUSE_MOVE, onMouseMove);
+      pingTimer.start();
+    }
+
+    public function onDeactivate(e:Event):void {
+      Debug.trace("DEACTIVATE");
+      stage.removeEventListener(MouseEvent.MOUSE_MOVE, onMouseMove);
+      pingTimer.stop();
+    }
+
+    public function onMouseMove(e:MouseEvent):void {
+      sendMessage({type: 'mouse_move', id: clientId, x: e.localX, y: e.localY});
+    }
+
+    public function sendMessage(message:Object):void {
+      socket.writeUTFBytes(JSON.encode(message));
+      socket.writeByte(0);
     }
     
-    public function jitter(e:TimerEvent):void {
+    public function handleMessage(msg:String):void {
+      // Debug.trace("HANDLE MESSAGE", msg);
+      var message:Object = JSON.decode(msg);
+      if (message.type == 'all_positions') {
+        Debug.trace('ping time', getTimer() - message.timestamp, 'ms');
+        graphics.clear();
+        for (var id:String in message.positions) {
+            var position:Object = message.positions[id];
+            graphics.beginFill(id == clientId? 0x555599 : 0x995555);
+            graphics.drawRect(position.x - 10, position.y - 10, 20, 20);
+            graphics.endFill();
+          }
+      }
+    }
+
+    public function onTimer(e:TimerEvent):void {
+      sendMessage({type: 'ping', timestamp: getTimer()});
     }
   }
 }
