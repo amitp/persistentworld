@@ -2,6 +2,13 @@
 // amitp@cs.stanford.edu
 // License: MIT
 
+// Client/server protocol is:
+// [4 bytes] x = length of JSON message
+// [4 bytes] y = length of binary message
+// [x bytes] JSON message
+// [y bytes] binary message
+
+
 var fs = require('fs');
 var sys = require('sys');
 var net = require('net');
@@ -53,18 +60,22 @@ net.createServer(function (socket) {
         lastLogTime = thisLogTime;
     }
 
-    function writeMessage(message) {
-        message = JSON.stringify(message);
-        log('sending ' + message);
-        socket.write(message + '\0');
+    function sendMessage(message, binaryPayload /* optional */) {
+        if (binaryPayload == null) binaryPayload = "";
+        jsonMessage = JSON.stringify(message);
+        log('sending ' + jsonMessage);
+        socket.write(int32ToBinaryLittleEndian(jsonMessage.length)
+                     + int32ToBinaryLittleEndian(binaryPayload.length));
+        socket.write(jsonMessage);
+        socket.write(binaryPayload);
     }
     
-    function handleMessage(message) {
-        log('handle message ' + message);
+    function handleMessage(jsonMessage, binaryMessage) {
+        log('handle message ' + jsonMessage);
         try {
-            message = JSON.parse(message);  // TODO: move out
+            message = JSON.parse(jsonMessage);  // TODO: move out?
         } catch (e) {
-            log('error ' + e.message + ' while parsing: ' + JSON.stringify(message));
+            log('error ' + e.message + ' while parsing: ' + JSON.stringify(jsonMessage));
             return;
         }
         
@@ -79,7 +90,7 @@ net.createServer(function (socket) {
     }
 
     function respondWithGlobalState(clientTimestamp) {
-        writeMessage({
+        sendMessage({
             type: 'all_positions',
             timestamp: clientTimestamp,
             positions: clientPositions
@@ -98,16 +109,37 @@ net.createServer(function (socket) {
             socket.write(crossdomainPolicy);
             socket.close();
         } else {
+            // The protocol sends two lengths first. Each length is 4
+            // bytes, and the two lengths tell us how many more bytes
+            // we have to read.
             bytesRead += data.length;
             buffer += data;
 
-            var checkEom = buffer.indexOf('\0');
-            while (checkEom >= 0) {
-                if (checkEom > 0) {
-                    handleMessage(buffer.slice(0, checkEom));
+            while (buffer.length >= 8) {
+                // It's long enough that we know the length of the message
+                var jsonLength = binaryToInt32LittleEndian(buffer.slice(0, 4));
+                var binaryLength = binaryToInt32LittleEndian(buffer.slice(4, 8));
+                // Sanity check
+                if (!(8 <= jsonLength && jsonLength <= 10000)) {
+                    log("ERROR: jsonLength corrupt? ", jsonLength);
+                    socket.close();
+                    return;
                 }
-                buffer = buffer.slice(checkEom+1);
-                checkEom = buffer.indexOf('\0');
+                if (!(0 <= binaryLength && binaryLength <= 10000000)) {
+                    log("ERROR: binaryLength corrupt? ", binaryLength);
+                    socket.close();
+                    return;
+                }
+
+                if (buffer.length >= 8 + jsonLength + binaryLength) {
+                    // We have the message, so process it, and remove those bytes
+                    handleMessage(buffer.substr(8, jsonLength),
+                                  buffer.substr(8 + jsonLength, binaryLength));
+                    buffer = buffer.slice(8 + jsonLength + binaryLength);
+                } else {
+                    // We don't have a full message, so wait
+                    break;
+                }
             }
         }
     });
