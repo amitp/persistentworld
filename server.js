@@ -85,11 +85,11 @@ net.createServer(function (socket) {
     function sendMessage(message, binaryPayload /* optional */) {
         if (binaryPayload == null) binaryPayload = "";
         jsonMessage = JSON.stringify(message);
-        log('sending ' + jsonMessage);
+        log('sending ' + message.type + " / " + jsonMessage.length + " / " + binaryPayload.length);
         socket.write(int32ToBinaryLittleEndian(jsonMessage.length)
-                     + int32ToBinaryLittleEndian(binaryPayload.length));
-        socket.write(jsonMessage);
-        socket.write(binaryPayload);
+                     + int32ToBinaryLittleEndian(binaryPayload.length), 'binary');
+        socket.write(jsonMessage, 'binary');
+        socket.write(binaryPayload, 'binary');
     }
     
     function handleMessage(jsonMessage, binaryMessage) {
@@ -149,7 +149,7 @@ net.createServer(function (socket) {
     socket.addListener("data", function (data) {
         if (bytesRead == 0 && data == "<policy-file-request/>\0") {
             log("policy-file-request");
-            socket.write(crossdomainPolicy);
+            socket.write(crossdomainPolicy, 'binary');
             socket.close();
         } else {
             // The protocol sends two lengths first. Each length is 4
