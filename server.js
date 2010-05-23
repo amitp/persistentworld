@@ -47,6 +47,16 @@ http.createServer(function (request, response) {
 var clientPositions = {};  // clientId -> {x: y:}
 
 
+// Conversion from int to little-endian 32-bit binary and back
+function binaryToInt32LittleEndian(buffer) {
+    return buffer.charCodeAt(0) | (buffer.charCodeAt(1) << 8) | (buffer.charCodeAt(2) << 16) | (buffer.charCodeAt(3) << 24);
+}
+
+function int32ToBinaryLittleEndian(value) {
+    return String.fromCharCode(value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff, (value >> 24) & 0xff);
+}
+
+
 // Second server is plain TCP, for the game communication. It also has
 // to serve the cross-domain policy file.
 net.createServer(function (socket) {
