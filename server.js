@@ -45,6 +45,18 @@ http.createServer(function (request, response) {
 
 // Server state
 var clientPositions = {};  // clientId -> {x: y:}
+var width = 0;
+var height = 0;
+var map = "";  // width X height tile ids (bytes)
+
+
+fs.readFile("/Users/amitp/Projects/mapgen2/output.map", 'binary', function (err, data) {
+    if (err) throw err;
+    width = binaryToInt32LittleEndian(data.substr(0, 4));
+    height = binaryToInt32LittleEndian(data.substr(4, 8));
+    sys.log("Map size: " + width + ", " + height);
+    map = data.substr(8);
+});
 
 
 // Conversion from int to little-endian 32-bit binary and back
@@ -94,11 +106,32 @@ net.createServer(function (socket) {
             clientPositions[socket.remotePort] = {x: message.x, y: message.y};
         } else if (message.type == 'ping') {
             respondWithGlobalState(message.timestamp);
+        } else if (message.type == 'map_tiles') {
+            respondWithMapTiles(message.timestamp,
+                                message.left, message.right,
+                                message.top, message.bottom);
         } else {
             log('  -- unknown message type');
         }
     }
 
+    function respondWithMapTiles(clientTimestamp, left, right, top, bottom) {
+        var tiles = [];
+        for (var x = left; x <= right; x++) {
+            tiles.push(map.slice(x*height + top, x*height + bottom+1));
+        }
+        log('output:', tiles);
+        sendMessage({
+            type: 'map_tiles',
+            timestamp: clientTimestamp,
+            left: left,
+            right: right,
+            top: top,
+            bottom: bottom,
+            tiles: tiles
+        });
+    }
+    
     function respondWithGlobalState(clientTimestamp) {
         sendMessage({
             type: 'all_positions',

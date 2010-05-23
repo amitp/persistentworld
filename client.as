@@ -117,6 +117,7 @@ package {
       Debug.trace("ACTIVATE");
       // NOTE: the Debug panel is eating up the mouse events, so we grab from stage instead
       stage.addEventListener(MouseEvent.MOUSE_MOVE, onMouseMove);
+      sendMessage({type: 'map_tiles', timestamp: getTimer(), left: 0, right: 1, top: 0, bottom: 1});
       pingTimer.start();
     }
 
@@ -161,7 +162,17 @@ package {
             graphics.drawRect(position.x - 10, position.y - 10, 20, 20);
             graphics.endFill();
           }
-      } 
+      } else if (message.type == 'map_tiles') {
+        Debug.trace('map tiles', getTimer() - message.timestamp, 'ms');
+        for (var x:int = message.left; x <= message.right; x++) {
+          for (var y:int = message.top; y <= message.bottom; y++) {
+            var tileId:int = message.tiles[x-message.left].charCodeAt(y-message.top);
+            graphics.beginFill(tileId == 0? 0x000099 : 0x006600);
+            graphics.drawRect(x, y, 1, 1);
+            graphics.endFill();
+          }
+        }
+      }
     }
 
     public function onTimer(e:TimerEvent):void {
