@@ -117,7 +117,7 @@ package {
       Debug.trace("ACTIVATE");
       // NOTE: the Debug panel is eating up the mouse events, so we grab from stage instead
       stage.addEventListener(MouseEvent.MOUSE_MOVE, onMouseMove);
-      sendMessage({type: 'map_tiles', timestamp: getTimer(), left: 0, right: 1, top: 0, bottom: 1});
+      sendMessage({type: 'map_tiles', timestamp: getTimer(), left: 0, right: 500, top: 0, bottom: 500});
       pingTimer.start();
     }
 
@@ -149,6 +149,7 @@ package {
       packet.writeBytes(int32ToBinaryLittleEndian(jsonLength));
 
       socket.writeBytes(packet);
+      socket.flush();
     }
     
     public function handleMessage(message:Object, binaryPayload:ByteArray):void {
@@ -164,11 +165,12 @@ package {
           }
       } else if (message.type == 'map_tiles') {
         Debug.trace('map tiles', getTimer() - message.timestamp, 'ms');
+        var i:int = 0;
         for (var x:int = message.left; x <= message.right; x++) {
           for (var y:int = message.top; y <= message.bottom; y++) {
-            var tileId:int = message.tiles[x-message.left].charCodeAt(y-message.top);
+            var tileId:int = binaryPayload[i++];
             graphics.beginFill(tileId == 0? 0x000099 : 0x006600);
-            graphics.drawRect(x, y, 1, 1);
+            graphics.drawRect(x*2, y*2, 2, 2);
             graphics.endFill();
           }
         }

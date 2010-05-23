@@ -56,6 +56,7 @@ fs.readFile("/Users/amitp/Projects/mapgen2/output.map", 'binary', function (err,
     height = binaryToInt32LittleEndian(data.substr(4, 8));
     sys.log("Map size: " + width + ", " + height);
     map = data.substr(8);
+    sys.log("Map size: " + width + ", " + height + " => " + map.length + " (should be " + (width*height) + ")");
 });
 
 
@@ -120,16 +121,14 @@ net.createServer(function (socket) {
         for (var x = left; x <= right; x++) {
             tiles.push(map.slice(x*height + top, x*height + bottom+1));
         }
-        log('output:', tiles);
         sendMessage({
             type: 'map_tiles',
             timestamp: clientTimestamp,
             left: left,
             right: right,
             top: top,
-            bottom: bottom,
-            tiles: tiles
-        });
+            bottom: bottom
+        }, tiles.join(""));
     }
     
     function respondWithGlobalState(clientTimestamp) {
