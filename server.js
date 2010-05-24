@@ -119,9 +119,21 @@ net.createServer(function (socket) {
     }
 
     function respondWithMapTiles(clientTimestamp, left, right, top, bottom) {
+        // Clip the rectangle to the map and make sure bounds are sane
+        left = Math.floor(left);
+        right = Math.floor(right);
+        top = Math.floor(top);
+        bottom = Math.floor(bottom);
+        if (left < 0) left = 0;
+        if (right > width) right = width;
+        if (top < 0) top = 0;
+        if (bottom > height) bottom = height;
+        if (right < left) right = left;
+        if (bottom < top) bottom = top;
+        
         var tiles = [];
-        for (var x = left; x <= right; x++) {
-            tiles.push(map.slice(x*height + top, x*height + bottom+1));
+        for (var x = left; x < right; x++) {
+            tiles.push(map.slice(x*height + top, x*height + bottom));
         }
         sendMessage({
             type: 'map_tiles',

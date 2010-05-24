@@ -166,8 +166,8 @@ package {
       } else if (message.type == 'map_tiles') {
         Debug.trace('map tiles', getTimer() - message.timestamp, 'ms');
         var i:int = 0;
-        for (var x:int = message.left; x <= message.right; x++) {
-          for (var y:int = message.top; y <= message.bottom; y++) {
+        for (var x:int = message.left; x < message.right; x++) {
+          for (var y:int = message.top; y < message.bottom; y++) {
             var tileId:int = binaryPayload[i++];
             graphics.beginFill(tileId == 0? 0x000099 : 0x006600);
             graphics.drawRect(x*2, y*2, 2, 2);
