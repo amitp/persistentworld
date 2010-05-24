@@ -26,19 +26,22 @@ var crossdomainPolicy = (
 // First server is HTTP, for serving the swf (don't think crossdomain needed here)
 http.createServer(function (request, response) {
     sys.log(request.method + " " + request.url);
-    if (request.method == 'GET' && request.url == "/crossdomain.xml") {
-        response.sendHeader(200, {'Content-Type': 'text/xml'});
+    if (request.method == 'GET' && request.url == '/crossdomain.xml') {
+        response.writeHead(200, {'Content-Type': 'text/xml'});
         response.write(crossdomainPolicy);
-        response.close();
-    } else if (request.method == 'GET' && request.url == "/") {
-        response.sendHeader(200, {'Content-Type': 'application/x-shockwave-flash'});
-        fs.readFile("client-dbg.swf", "binary", function (err, data) {
+        response.end();
+    } else if (request.method == 'GET' && request.url == '/') {
+        response.writeHead(200, {'Content-Type': 'application/x-shockwave-flash'});
+        fs.readFile("client-dbg.swf", 'binary', function (err, data) {
             if (err) throw err;
-            response.write(data, "binary");
-            response.close();
+            response.write(data, 'binary');
+            response.end();
         });
+    } else if (request.method == 'GET' && request.url.substr(0, 5) == 'http:') {
+        // People from China are probing to see if server will act as a proxy
+        response.writeHead(403);
     } else {
-        response.sendHeader(404);
+        response.writeHead(404);
     }
 }).listen(8000);
 
@@ -54,7 +57,6 @@ fs.readFile("/Users/amitp/Projects/mapgen2/output.map", 'binary', function (err,
     if (err) throw err;
     width = binaryToInt32LittleEndian(data.substr(0, 4));
     height = binaryToInt32LittleEndian(data.substr(4, 8));
-    sys.log("Map size: " + width + ", " + height);
     map = data.substr(8);
     sys.log("Map size: " + width + ", " + height + " => " + map.length + " (should be " + (width*height) + ")");
 });
@@ -144,6 +146,9 @@ net.createServer(function (socket) {
     
     socket.addListener("connect", function () {
         log("connect");
+    });
+    socket.addListener("error",function (e) {
+        log("ERROR on socket: e" + e);
     });
     socket.addListener("data", function (data) {
         if (bytesRead == 0 && data == "<policy-file-request/>\0") {
