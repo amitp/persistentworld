@@ -31,7 +31,7 @@ http.createServer(function (request, response) {
         response.end();
     } else if (request.method == 'GET' && request.url == '/') {
         response.writeHead(200, {'Content-Type': 'application/x-shockwave-flash'});
-        fs.readFile("client-dbg.swf", 'binary', function (err, data) {
+        fs.readFile("gameclient-dbg.swf", 'binary', function (err, data) {
             if (err) throw err;
             response.write(data, 'binary');
             response.end();
