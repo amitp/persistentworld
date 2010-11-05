@@ -8,7 +8,6 @@
 // [x bytes] JSON message
 // [y bytes] binary message
 
-
 var fs = require('fs');
 var sys = require('sys');
 var net = require('net');
@@ -25,7 +24,7 @@ var crossdomainPolicy = (
 
 // First server is HTTP, for serving the swf (don't think crossdomain needed here)
 http.createServer(function (request, response) {
-    sys.log(request.method + " " + request.url);
+    sys.log(request.connection.remoteAddress + " " + request.method + " " + request.url);
     if (request.method == 'GET' && request.url == '/crossdomain.xml') {
         response.writeHead(200, {'Content-Type': 'text/xml'});
         response.write(crossdomainPolicy);
@@ -39,7 +38,7 @@ http.createServer(function (request, response) {
         });
     } else if (request.method == 'GET' && request.url.substr(0, 5) == 'http:') {
         // People from China are probing to see if server will act as a proxy
-        response.writeHead(403);
+        response.writeHead(403, "Your IP has been logged.");
     } else {
         response.writeHead(404);
     }
@@ -53,11 +52,11 @@ var height = 0;
 var map = "";  // width X height tile ids (bytes)
 
 
-fs.readFile("/Users/amitp/Projects/mapgen2/output.map", 'binary', function (err, data) {
+fs.readFile("elevation.data", 'binary', function (err, data) {
     if (err) throw err;
-    width = binaryToInt32LittleEndian(data.substr(0, 4));
-    height = binaryToInt32LittleEndian(data.substr(4, 8));
-    map = data.substr(8);
+    width = 2048;
+    height = 2048;
+    map = data;
     sys.log("Map size: " + width + ", " + height + " => " + map.length + " (should be " + (width*height) + ")");
 });
 
