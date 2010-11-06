@@ -36,6 +36,11 @@ package {
       socket.addEventListener(ProgressEvent.SOCKET_DATA,
                               function (e:ProgressEvent):void {
                                 var previousPosition:int = buffer.position;
+                                if (socket.bytesAvailable == 0) {
+                                  Debug.trace("ERROR: SOCKET_DATA event has bytesAvailable == 0");
+                                  return;
+                                }
+
                                 socket.readBytes(buffer, buffer.length, socket.bytesAvailable);
 
                                 while (buffer.bytesAvailable >= 8) {
@@ -62,7 +67,14 @@ package {
                                     // The entire message has arrived
                                     var jsonMessage:String = buffer.readUTFBytes(jsonLength);
                                     var binaryMessage:ByteArray = new ByteArray();
-                                    buffer.readBytes(binaryMessage, 0, binaryLength);
+                                    if (binaryLength > 0) {
+                                      // NOTE: we don't want
+                                      // binaryLength == 0 to get
+                                      // passed in to readBytes()
+                                      // because that tells it to read
+                                      // everything.
+                                      buffer.readBytes(binaryMessage, 0, binaryLength);
+                                    }
                                     if (onMessageCallback != null) {
                                       onMessageCallback(JSON.decode(jsonMessage), binaryMessage);
                                     }
