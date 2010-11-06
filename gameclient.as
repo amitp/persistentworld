@@ -6,12 +6,17 @@ package {
   import flash.display.*;
   import flash.events.*;
   import flash.utils.*;
+  import flash.text.*;
   
   public class gameclient extends Sprite {
-    static public var BITMAPSCALE:Number = 6.0;
+    static public var BITMAPSCALE:Number = 3.0;
     public var mapBitmap:BitmapData = new BitmapData(2048, 2048);
     public var colorMap:Array = [];
     public var client:Client = new Client();
+    public var pingTime:TextField = new TextField();
+    public var bufferView:TextField = new TextField();
+    public var location:Array = [300, 300];
+    public var moving:Boolean = false;
     
     public function gameclient() {
       stage.frameRate = 30;
@@ -21,43 +26,89 @@ package {
       b.scaleY = 1.0/BITMAPSCALE;
       b.smoothing = true;
       addChild(b);
+
+      pingTime.x = 50;
+      pingTime.y = 340;
+      addChild(pingTime);
+      bufferView.width = 400;
+      bufferView.x = 0;
+      bufferView.y = 310;
+      addChild(bufferView);
       
       addChild(new Debug(this)).x = 350;
 
       stage.addEventListener(Event.ACTIVATE, function (e:Event):void {
           Debug.trace("ACTIVATE -- got focus, now move the mouse around");
-          stage.addEventListener(MouseEvent.MOUSE_MOVE, onMouseMove);
+          client.activate();
         });
       stage.addEventListener(Event.DEACTIVATE, function (e:Event):void {
           Debug.trace("DEACTIVATE -- lost focus, click to activate");
-          stage.removeEventListener(MouseEvent.MOUSE_MOVE, onMouseMove);
+          client.deactivate();
+          mapBitmap.noise(1);
         });
-      
+
+      stage.addEventListener(KeyboardEvent.KEY_DOWN, function (e:KeyboardEvent):void {
+          e.updateAfterEvent();
+          Debug.trace("KEY DOWN", e.keyCode);
+
+          var step:int = 5;
+          var newLoc:Array = [location[0], location[1]];
+          if (e.keyCode == 39 /* RIGHT */) { newLoc[0] += step; }
+          else if (e.keyCode == 37 /* LEFT */) { newLoc[0] -= step; }
+          else if (e.keyCode == 38 /* UP */) { newLoc[1] -= step; }
+          else if (e.keyCode == 40 /* DOWN */) { newLoc[1] += step; }
+
+          if (newLoc[0] != location[0] || newLoc[1] != location[1]) {
+            if (!moving) {
+              Debug.trace("MOVE REQ", location, "->", newLoc);
+              moving = true;
+              client.sendMessage({
+                  type: 'move',
+                    timestamp: getTimer(),
+                    from: location,
+                    to: newLoc
+                    });
+            } else {
+              Debug.trace("ALREADY MOVING");
+            }
+          }
+        });
+        
       client.onMessageCallback = handleMessage;
+      client.onSocketReceive = function():void {
+        bufferView.text = "RECV BUFFER:" + client.buffer.position + "/" + client.buffer.length;
+        if (client.buffer.length >= 8) {
+          var prevPosition:int = client.buffer.position;
+          var sizeBuffer:ByteArray = new ByteArray();
+          client.buffer.readBytes(sizeBuffer, 0, 4);
+          var len1:int = Client.binaryToInt32LittleEndian(sizeBuffer);
+          client.buffer.readBytes(sizeBuffer, 0, 4);
+          var len2:int = Client.binaryToInt32LittleEndian(sizeBuffer);
+          bufferView.text = "RECV PARTIAL:" + client.buffer.position + "/" + client.buffer.length + " " + len1 + ".." + len2 + "? " + client.buffer.bytesAvailable;
+          client.buffer.position = prevPosition;
+        }
+      };
+      
       client.connect();
     }
 
-    public function onMouseMove(e:MouseEvent):void {
-      // sendMessage({type: 'mouse_move', id: clientId, x: e.localX, y: e.localY});
-      var radius:int = 20 * BITMAPSCALE;
-      client.sendMessage({type: 'map_tiles', timestamp: getTimer(), left: e.localX*BITMAPSCALE-radius, right: e.localX*BITMAPSCALE+radius, top: e.localY*BITMAPSCALE-radius, bottom: e.localY*BITMAPSCALE+radius});
-    }
-
     public function handleMessage(message:Object, binaryPayload:ByteArray):void {
-      // Debug.trace("HANDLE MESSAGE", msg);
-      if (message.type == 'all_positions') {
-        /*
-        Debug.trace('ping time', getTimer() - message.timestamp, 'ms');
-        graphics.clear();
-        for (var id:String in message.positions) {
-            var position:Object = message.positions[id];
-            graphics.beginFill(id == clientId? 0x555599 : 0x995555);
-            graphics.drawRect(position.x - 10, position.y - 10, 20, 20);
-            graphics.endFill();
-          }
-        */
+      if (message.type == 'move_ok') {
+        moving = false;
+        Debug.trace("MOVE_OK", message.type, message.loc);
+        location = message.loc;
+        
+        var radius:int = 10;
+        client.sendMessage({
+            type: 'map_tiles',
+              timestamp: getTimer(),
+              left: location[0] - radius,
+              right: location[0] + radius,
+              top: location[1] - radius,
+              bottom: location[1] + radius});
+      } else if (message.type == 'pong') {
+        pingTime.text = "ping time: " + (getTimer() - message.timestamp) + "ms";
       } else if (message.type == 'map_tiles') {
-        Debug.trace('ping time: ', getTimer() - message.timestamp, 'ms');
         if (colorMap.length == 0) buildColorMap();
         var i:int = 0;
         mapBitmap.lock();
@@ -92,9 +143,9 @@ package {
       for (var altitude:int = 0; altitude < 10; altitude++) {
         var dry:int = interpolateColor(0xb19772, 0xcfb78b, altitude/9.0);
         var wet:int = interpolateColor(0x1d8e39, 0x97cb1b, altitude/9.0);
-        for (var moisture:int = 0; moisture < 10; moisture++) {
-          var index:int = 100 + altitude + 10*moisture;
-          colorMap[index] = interpolateColor(dry, wet, moisture/9.0);
+        for (var moisture:int = 0; moisture < 25; moisture++) {
+          var index:int = 2 + altitude + 10*moisture;
+          colorMap[index] = interpolateColor(dry, wet, moisture/24.0);
         }
       }
     }
