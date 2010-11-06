@@ -38,20 +38,19 @@ package {
       addChild(new Debug(this)).x = 350;
 
       stage.addEventListener(Event.ACTIVATE, function (e:Event):void {
-          Debug.trace("ACTIVATE -- got focus, now move the mouse around");
+          Debug.trace("ACTIVATE -- got focus, now use arrow keys");
           client.activate();
         });
       stage.addEventListener(Event.DEACTIVATE, function (e:Event):void {
           Debug.trace("DEACTIVATE -- lost focus, click to activate");
           client.deactivate();
-          mapBitmap.noise(1);
         });
 
       stage.addEventListener(KeyboardEvent.KEY_DOWN, function (e:KeyboardEvent):void {
           e.updateAfterEvent();
           Debug.trace("KEY DOWN", e.keyCode);
 
-          var step:int = 5;
+          var step:int = 20;
           var newLoc:Array = [location[0], location[1]];
           if (e.keyCode == 39 /* RIGHT */) { newLoc[0] += step; }
           else if (e.keyCode == 37 /* LEFT */) { newLoc[0] -= step; }
