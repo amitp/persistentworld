@@ -80,7 +80,7 @@ net.createServer(function (socket) {
     var lastLogTime = new Date().getTime();
     function log(msg) {
         var thisLogTime = new Date().getTime();
-        sys.log("+" + (thisLogTime - lastLogTime) + " socket[" + socket.remoteAddress + ":" + socket.remotePort + "] " + msg);
+        sys.log("+" + (thisLogTime - lastLogTime) + " socket" + (socket.readyState == 'open'? "" : "."+socket.readyState) + "[" + socket.remoteAddress + ":" + socket.remotePort + "] " + msg);
         lastLogTime = thisLogTime;
     }
 
@@ -114,7 +114,7 @@ net.createServer(function (socket) {
                 loc: clientPositions[socket.remotePort]
             });
         } else if (message.type == 'ping') {
-            sendMessage({type: 'pong', timestamp: message.timestamp}));
+            sendMessage({type: 'pong', timestamp: message.timestamp});
         } else if (message.type == 'map_tiles') {
             respondWithMapTiles(message.timestamp,
                                 message.left, message.right,
@@ -163,10 +163,17 @@ net.createServer(function (socket) {
     socket.setNoDelay();
     
     socket.addListener("connect", function () {
-        log("connect");
+        log("CONNECT");
     });
-    socket.addListener("error",function (e) {
-        log("ERROR on socket: e" + e);
+    socket.addListener("error", function (e) {
+        log("ERROR on socket: " + e);
+    });
+    socket.addListener("timeout", function() {
+        log("TIMEOUT");
+        socket.end();
+    });
+    socket.addListener("drain", function() {
+        log("DRAIN");
     });
     socket.addListener("data", function (data) {
         if (bytesRead == 0 && data == "<policy-file-request/>\0") {
@@ -220,7 +227,7 @@ net.createServer(function (socket) {
         }
     });
     socket.addListener("end", function () {
-        log("end");
+        log("END");
         // TODO: need to track this socket's id, and remove from clientPositions here, or on timeout
         delete clientPositions[socket.remotePort];
         socket.end();
