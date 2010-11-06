@@ -9,33 +9,35 @@ package {
   import flash.text.*;
   
   public class gameclient extends Sprite {
-    static public var BITMAPSCALE:Number = 3.0;
-    public var mapBitmap:BitmapData = new BitmapData(2048, 2048);
+    static public var BITMAPSCALE:Number = 20.0/400;
+    public var mapBitmap:BitmapData = new BitmapData(20, 20);
     public var colorMap:Array = [];
     public var client:Client = new Client();
     public var pingTime:TextField = new TextField();
     public var bufferView:TextField = new TextField();
-    public var location:Array = [300, 300];
+    public var location:Array = [1000, 1000];
     public var moving:Boolean = false;
     
     public function gameclient() {
+      stage.scaleMode = 'noScale';
+      stage.align = 'TL';
       stage.frameRate = 30;
       
       var b:Bitmap = new Bitmap(mapBitmap);
       b.scaleX = 1.0/BITMAPSCALE;
       b.scaleY = 1.0/BITMAPSCALE;
-      b.smoothing = true;
+      b.smoothing = false;
       addChild(b);
 
       pingTime.x = 50;
-      pingTime.y = 340;
+      pingTime.y = 440;
       addChild(pingTime);
       bufferView.width = 400;
       bufferView.x = 0;
-      bufferView.y = 310;
+      bufferView.y = 410;
       addChild(bufferView);
       
-      addChild(new Debug(this)).x = 350;
+      addChild(new Debug(this)).x = 410;
 
       stage.addEventListener(Event.ACTIVATE, function (e:Event):void {
           Debug.trace("ACTIVATE -- got focus, now use arrow keys");
@@ -50,7 +52,7 @@ package {
           e.updateAfterEvent();
           Debug.trace("KEY DOWN", e.keyCode);
 
-          var step:int = 20;
+          var step:int = 5;
           var newLoc:Array = [location[0], location[1]];
           if (e.keyCode == 39 /* RIGHT */) { newLoc[0] += step; }
           else if (e.keyCode == 37 /* LEFT */) { newLoc[0] -= step; }
@@ -114,7 +116,9 @@ package {
         for (var x:int = message.left; x < message.right; x++) {
           for (var y:int = message.top; y < message.bottom; y++) {
             var tileId:int = binaryPayload[i++];
-            mapBitmap.setPixel(x, y, colorMap[tileId]);
+            mapBitmap.setPixel(x - location[0] + mapBitmap.width/2,
+                               y - location[1] + mapBitmap.height/2,
+                               colorMap[tileId]);
           }
         }
         mapBitmap.unlock();
