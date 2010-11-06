@@ -9,7 +9,7 @@
 // [y bytes] binary message
 
 var fs = require('fs');
-var sys = require('sys');
+var sys = require('util');
 var net = require('net');
 var http = require('http');
 
@@ -84,30 +84,37 @@ net.createServer(function (socket) {
         lastLogTime = thisLogTime;
     }
 
+    function socket_write(bytes, type) {
+        if (!socket.write(bytes, type)) {
+            // TODO: figure out why something goes wrong when write queue > 32k
+            log('BUFFER IS FULL ' + socket._writeQueue.length + " " + (socket._writeQueue.length > 0? socket._writeQueue[0].length : 0));
+        }
+    }
+    
     function sendMessage(message, binaryPayload /* optional */) {
         if (binaryPayload == null) binaryPayload = "";
         jsonMessage = JSON.stringify(message);
-        log('sending ' + message.type + " / " + jsonMessage.length + " / " + binaryPayload.length);
-        socket.write(int32ToBinaryLittleEndian(jsonMessage.length)
-                     + int32ToBinaryLittleEndian(binaryPayload.length), 'binary');
-        socket.write(jsonMessage, 'binary');
-        socket.write(binaryPayload, 'binary');
+        if (message.type != 'pong') {
+            log('sending ' + message.type + " / " + jsonMessage.length + " / " + binaryPayload.length + " " + jsonMessage);
+        }
+        bytes = (int32ToBinaryLittleEndian(jsonMessage.length)
+                 + int32ToBinaryLittleEndian(binaryPayload.length)
+                 + jsonMessage
+                 + binaryPayload);
+        socket_write(bytes, 'binary');
     }
     
-    function handleMessage(jsonMessage, binaryMessage) {
-        log('handle message ' + jsonMessage);
-        try {
-            message = JSON.parse(jsonMessage);  // TODO: move out?
-        } catch (e) {
-            log('error ' + e.message + ' while parsing: ' + JSON.stringify(jsonMessage));
-            return;
-        }
-        
-        if (message.type == 'mouse_move') {
+    function handleMessage(message, binaryMessage) {
+        if (message.type == 'move') {
             // NOTE: we're temporarily using remotePort as the client id
-            clientPositions[socket.remotePort] = {x: message.x, y: message.y};
+            clientPositions[socket.remotePort] = message.to;
+            sendMessage({
+                type: 'move_ok',
+                timestamp: message.timestamp,
+                loc: clientPositions[socket.remotePort]
+            });
         } else if (message.type == 'ping') {
-            respondWithGlobalState(message.timestamp);
+            sendMessage({type: 'pong', timestamp: message.timestamp}));
         } else if (message.type == 'map_tiles') {
             respondWithMapTiles(message.timestamp,
                                 message.left, message.right,
@@ -165,7 +172,7 @@ net.createServer(function (socket) {
         if (bytesRead == 0 && data == "<policy-file-request/>\0") {
             log("policy-file-request");
             socket.write(crossdomainPolicy, 'binary');
-            socket.close();
+            socket.end();
         } else {
             // The protocol sends two lengths first. Each length is 4
             // bytes, and the two lengths tell us how many more bytes
@@ -180,20 +187,31 @@ net.createServer(function (socket) {
                 // Sanity check
                 if (!(8 <= jsonLength && jsonLength <= 10000)) {
                     log("ERROR: jsonLength corrupt? ", jsonLength);
-                    socket.close();
+                    socket.end();
                     return;
                 }
                 if (!(0 <= binaryLength && binaryLength <= 10000000)) {
                     log("ERROR: binaryLength corrupt? ", binaryLength);
-                    socket.close();
+                    socket.end();
                     return;
                 }
 
                 if (buffer.length >= 8 + jsonLength + binaryLength) {
                     // We have the message, so process it, and remove those bytes
-                    handleMessage(buffer.substr(8, jsonLength),
-                                  buffer.substr(8 + jsonLength, binaryLength));
+                    jsonMessage = buffer.substr(8, jsonLength);
+                    binaryMessage = buffer.substr(8 + jsonLength, binaryLength);
                     buffer = buffer.slice(8 + jsonLength + binaryLength);
+                    
+                    try {
+                        message = JSON.parse(jsonMessage); 
+                    } catch (e) {
+                        log('error ' + e.message + ' while parsing: ' + JSON.stringify(jsonMessage));
+                        message = null;
+                    }
+                    if (message != null) {
+                        if (message.type != 'ping') log('handle message ' + jsonMessage);
+                        handleMessage(message);
+                    }
                 } else {
                     // We don't have a full message, so wait
                     break;
@@ -205,7 +223,7 @@ net.createServer(function (socket) {
         log("end");
         // TODO: need to track this socket's id, and remove from clientPositions here, or on timeout
         delete clientPositions[socket.remotePort];
-        socket.close();
+        socket.end();
     });
 }).listen(8001);
 
