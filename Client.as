@@ -10,15 +10,16 @@ package {
   
   public class Client {
     public var socket:Socket = new Socket();
-    public var pingTimer:Timer = new Timer(1000/10, 0);
+    public var buffer:ByteArray = new ByteArray();
+    public var pingTimer:Timer = new Timer(1000/5, 0);
 
     public var onMessageCallback:Function = null;
+    public var onSocketReceive:Function = null;
     
     public function Client() {
     }
 
     public function connect(serverAddress:String = null, serverPort:int = 8001):void {
-      var buffer:ByteArray = new ByteArray();
       socket.addEventListener(Event.CONNECT, function (e:Event):void {
           Debug.trace("CONNECT -- click to activate");
         });
@@ -43,6 +44,8 @@ package {
 
                                 socket.readBytes(buffer, buffer.length, socket.bytesAvailable);
 
+                                if (onSocketReceive != null) onSocketReceive();
+                                
                                 while (buffer.bytesAvailable >= 8) {
                                   // It's long enough that we can read the sizes
                                   var sizeBuffer:ByteArray = new ByteArray();
@@ -76,7 +79,9 @@ package {
                                       buffer.readBytes(binaryMessage, 0, binaryLength);
                                     }
                                     if (onMessageCallback != null) {
-                                      onMessageCallback(JSON.decode(jsonMessage), binaryMessage);
+                                      var message:Object = JSON.decode(jsonMessage);
+                                      if (message.type != 'pong') Debug.trace("MSG:", jsonMessage);
+                                      onMessageCallback(message, binaryMessage);
                                     }
                                     previousPosition = buffer.position;
                                   } else {
@@ -149,7 +154,7 @@ package {
     }
     
     public function onTimer(e:TimerEvent):void {
-      // sendMessage({type: 'ping', timestamp: getTimer()});
+      sendMessage({type: 'ping', timestamp: getTimer()});
     }
   }
 }
