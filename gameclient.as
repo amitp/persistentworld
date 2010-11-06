@@ -9,8 +9,8 @@ package {
   import flash.text.*;
   
   public class gameclient extends Sprite {
-    static public var BITMAPSCALE:Number = 20.0/400;
-    public var mapBitmap:BitmapData = new BitmapData(20, 20);
+    static public var TILES_ON_SCREEN:int = 40;
+    public var mapBitmap:BitmapData = new BitmapData(TILES_ON_SCREEN, TILES_ON_SCREEN);
     public var colorMap:Array = [];
     public var client:Client = new Client();
     public var pingTime:TextField = new TextField();
@@ -24,8 +24,8 @@ package {
       stage.frameRate = 30;
       
       var b:Bitmap = new Bitmap(mapBitmap);
-      b.scaleX = 1.0/BITMAPSCALE;
-      b.scaleY = 1.0/BITMAPSCALE;
+      b.scaleX = 400.0/TILES_ON_SCREEN;
+      b.scaleY = 400.0/TILES_ON_SCREEN;
       b.smoothing = false;
       addChild(b);
 
@@ -99,7 +99,7 @@ package {
         Debug.trace("MOVE_OK", message.type, message.loc);
         location = message.loc;
         
-        var radius:int = 10;
+        var radius:int = mapBitmap.width / 2;
         client.sendMessage({
             type: 'map_tiles',
               timestamp: getTimer(),
@@ -141,14 +141,14 @@ package {
         return (r3 << 16) | (g3 << 8) | b3;
       }
       
-      colorMap[0] = 0x3d526d;
-      colorMap[1] = 0x374b63;
+      colorMap[0] = 0x225588;
+      colorMap[1] = 0x553322;
       for (var altitude:int = 0; altitude < 10; altitude++) {
         var dry:int = interpolateColor(0xb19772, 0xcfb78b, altitude/9.0);
         var wet:int = interpolateColor(0x1d8e39, 0x97cb1b, altitude/9.0);
-        for (var moisture:int = 0; moisture < 25; moisture++) {
+        for (var moisture:int = 0; moisture < 10; moisture++) {
           var index:int = 2 + altitude + 10*moisture;
-          colorMap[index] = interpolateColor(dry, wet, moisture/24.0);
+          colorMap[index] = interpolateColor(dry, wet, moisture/9.0);
         }
       }
     }

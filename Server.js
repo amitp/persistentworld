@@ -45,20 +45,34 @@ http.createServer(function (request, response) {
 }).listen(8000);
 
 
+// Build the map tiles by combining data from three *.data files
+function buildMap() {
+    var elevation = fs.readFileSync("elevation.data");
+    var moisture = fs.readFileSync("moisture.data");
+    var overrides = fs.readFileSync("overrides.data");
+    var map = new Buffer(2048*2048);
+    for (var i = 0; i < map.length; i++) {
+        var code = overrides[i] >> 4;
+        if (code == 1 || code == 5 || code == 6 || code == 7 || code == 8) {
+            // water
+            map[i] = 0;
+        } else if (code == 9 || code == 10 || code == 11 || code == 12) {
+            // road/bridge
+            map[i] = 1;
+        } else {
+            // combine moisture and elevation
+            map[i] = 2 + Math.floor(elevation[i]/255.0*9) + 10*Math.floor(moisture[i]/255.0*9);
+        }
+    }
+    return map;
+}
+
+
 // Server state
 var clientPositions = {};  // clientId -> {x: y:}
-var width = 0;
-var height = 0;
-var map = "";  // width X height tile ids (bytes)
-
-
-fs.readFile("elevation.data", 'binary', function (err, data) {
-    if (err) throw err;
-    width = 2048;
-    height = 2048;
-    map = data;
-    sys.log("Map size: " + width + ", " + height + " => " + map.length + " (should be " + (width*height) + ")");
-});
+var width = 2048;
+var height = 2048;
+var map = buildMap();  // width X height tile ids (bytes)
 
 
 // Conversion from int to little-endian 32-bit binary and back
