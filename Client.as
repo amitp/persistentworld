@@ -44,8 +44,6 @@ package {
 
                                 socket.readBytes(buffer, buffer.length, socket.bytesAvailable);
 
-                                if (onSocketReceive != null) onSocketReceive();
-                                
                                 while (buffer.bytesAvailable >= 8) {
                                   // It's long enough that we can read the sizes
                                   var sizeBuffer:ByteArray = new ByteArray();
@@ -102,6 +100,8 @@ package {
                                   // buffered).
                                   buffer.clear();
                                 }
+
+                                if (onSocketReceive != null) onSocketReceive();
                               });
 
       Debug.trace("Connecting");
