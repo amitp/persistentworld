@@ -15,6 +15,8 @@ package {
 
     public var onMessageCallback:Function = null;
     public var onSocketReceive:Function = null;
+
+    private var _sendQueue:Array = [];  // Used only until we connect
     
     public function Client() {
     }
@@ -22,6 +24,10 @@ package {
     public function connect(serverAddress:String = null, serverPort:int = 8001):void {
       socket.addEventListener(Event.CONNECT, function (e:Event):void {
           Debug.trace("CONNECT -- click to activate");
+          while (_sendQueue.length > 0) {
+            _sendMessage(_sendQueue[0][0], _sendQueue[0][1]);
+            _sendQueue.shift();
+          }
         });
       socket.addEventListener(Event.CLOSE, function (e:Event):void {
           Debug.trace("CLOSE");
@@ -133,6 +139,14 @@ package {
     }
 
     public function sendMessage(message:Object, binaryPayload:ByteArray=null):void {
+      if (socket.connected) {
+        _sendMessage(message, binaryPayload);
+      } else {
+        _sendQueue.push([message, binaryPayload]);
+      }
+    }
+
+    private function _sendMessage(message:Object, binaryPayload:ByteArray):void {
       var jsonMessage:String = JSON.encode(message);
       var packet:ByteArray = new ByteArray();
 
