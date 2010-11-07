@@ -9,26 +9,49 @@ package {
   import flash.text.*;
   
   public class gameclient extends Sprite {
-    static public var TILES_ON_SCREEN:int = 40;
-    public var mapBitmap:BitmapData = new BitmapData(TILES_ON_SCREEN, TILES_ON_SCREEN);
+    static public var TILES_ON_SCREEN:int = 25;
+    static public var TILE_PADDING:int = 3;
+    static public var WALK_TIME:Number = 150;
+    static public var WALK_STEP:int = 2;
+    
+    public var mapBitmapData:BitmapData = new BitmapData(TILES_ON_SCREEN + 2*TILE_PADDING,
+                                                         TILES_ON_SCREEN + 2*TILE_PADDING,
+                                                         false, 0x00ccddcc);
+    public var mapBitmap:Bitmap;
+
     public var colorMap:Array = [];
     public var client:Client = new Client();
     public var pingTime:TextField = new TextField();
     public var bufferView:TextField = new TextField();
-    public var location:Array = [1000, 1000];
+    public var location:Array = [945, 1220];
     public var moving:Boolean = false;
+
+    public var animationState:Object = null;
     
     public function gameclient() {
       stage.scaleMode = 'noScale';
       stage.align = 'TL';
       stage.frameRate = 30;
-      
-      var b:Bitmap = new Bitmap(mapBitmap);
-      b.scaleX = 400.0/TILES_ON_SCREEN;
-      b.scaleY = 400.0/TILES_ON_SCREEN;
-      b.smoothing = false;
-      addChild(b);
 
+      var mapMask:Shape = new Shape();
+      mapMask.graphics.beginFill(0x000000);
+      mapMask.graphics.drawRect(0, 0, 400, 400);
+      mapMask.graphics.endFill();
+      var mapParent:Sprite = new Sprite();
+      mapParent.mask = mapMask;
+      addChild(mapParent);
+      addChild(mapMask);
+      
+      mapBitmap = new Bitmap(mapBitmapData);
+      mapBitmap.scaleX = mapBitmap.scaleY = 400.0/TILES_ON_SCREEN;
+      mapBitmap.smoothing = false;
+
+      mapMask.x = 40;
+      mapMask.y = 40;
+      mapParent.x = 40;
+      mapParent.y = 40;
+      mapParent.addChild(mapBitmap);
+      
       pingTime.x = 50;
       pingTime.y = 440;
       addChild(pingTime);
@@ -39,6 +62,8 @@ package {
       
       addChild(new Debug(this)).x = 410;
 
+      addEventListener(Event.ENTER_FRAME, onEnterFrame);
+      
       stage.addEventListener(Event.ACTIVATE, function (e:Event):void {
           Debug.trace("ACTIVATE -- got focus, now use arrow keys");
           client.activate();
@@ -49,26 +74,37 @@ package {
         });
 
       stage.addEventListener(KeyboardEvent.KEY_DOWN, function (e:KeyboardEvent):void {
+          var now:Number;
           e.updateAfterEvent();
           Debug.trace("KEY DOWN", e.keyCode);
 
-          var step:int = 5;
           var newLoc:Array = [location[0], location[1]];
-          if (e.keyCode == 39 /* RIGHT */) { newLoc[0] += step; }
-          else if (e.keyCode == 37 /* LEFT */) { newLoc[0] -= step; }
-          else if (e.keyCode == 38 /* UP */) { newLoc[1] -= step; }
-          else if (e.keyCode == 40 /* DOWN */) { newLoc[1] += step; }
-
+          if (e.keyCode == 39 /* RIGHT */) { newLoc[0] += WALK_STEP; }
+          else if (e.keyCode == 37 /* LEFT */) { newLoc[0] -= WALK_STEP; }
+          else if (e.keyCode == 38 /* UP */) { newLoc[1] -= WALK_STEP; }
+          else if (e.keyCode == 40 /* DOWN */) { newLoc[1] += WALK_STEP; }
+          
           if (newLoc[0] != location[0] || newLoc[1] != location[1]) {
-            if (!moving) {
+            if (!moving && animationState == null) {
               Debug.trace("MOVE REQ", location, "->", newLoc);
               moving = true;
+              var radius:int = TILE_PADDING + TILES_ON_SCREEN;;
               client.sendMessage({
                   type: 'move',
-                    timestamp: getTimer(),
                     from: location,
-                    to: newLoc
+                    to: newLoc,
+                    left: newLoc[0] - radius,
+                    right: newLoc[0] + radius,
+                    top: newLoc[1] - radius,
+                    bottom: newLoc[1] + radius
                     });
+              now = getTimer();
+              animationState = {
+                beginLocation: location,
+                endLocation: newLoc,
+                beginTime: now,
+                endTime: now + WALK_TIME
+              };
             } else {
               Debug.trace("ALREADY MOVING");
             }
@@ -91,40 +127,83 @@ package {
       };
       
       client.connect();
+      client.sendMessage({
+          type: 'move',
+            from: location,
+            to: location,
+            left: location[0] - TILES_ON_SCREEN,
+            right: location[0] + TILES_ON_SCREEN,
+            top: location[1] - TILES_ON_SCREEN,
+            bottom: location[1] + TILES_ON_SCREEN
+            });
     }
 
+    
+    public function onEnterFrame(e:Event):void {
+      var time:Number = getTimer();
+      var f:Number, aX:Number, aY:Number;
+
+      if (animationState) {
+        if (time < animationState.endTime) {
+          f = (time - animationState.beginTime) / (animationState.endTime - animationState.beginTime);
+        } else {
+          f = 1.0;
+        }
+        aX = (1-f) * animationState.beginLocation[0] + f * animationState.endLocation[0];
+        aY = (1-f) * animationState.beginLocation[1] + f * animationState.endLocation[1];
+
+        if (time >= animationState.endTime) {
+          if (animationState.endLocation[0] == location[0] && animationState.endLocation[1] == location[1]) {
+            animationState = null;
+          } else {
+            Debug.trace("delaying animation removal ", animationState.endLocation, location);
+          }
+        }
+      } else {
+        aX = location[0];
+        aY = location[1];
+      }
+      if (animationState != null || e == null) {
+        mapBitmap.x = mapBitmap.scaleX * (location[0] - aX - TILE_PADDING);
+        mapBitmap.y = mapBitmap.scaleY * (location[1] - aY - TILE_PADDING);
+      }
+    }
+
+    
     public function handleMessage(message:Object, binaryPayload:ByteArray):void {
       if (message.type == 'move_ok') {
         moving = false;
         Debug.trace("MOVE_OK", message.type, message.loc);
         location = message.loc;
-        
-        var radius:int = mapBitmap.width / 2;
-        client.sendMessage({
-            type: 'map_tiles',
-              timestamp: getTimer(),
-              left: location[0] - radius,
-              right: location[0] + radius,
-              top: location[1] - radius,
-              bottom: location[1] + radius});
-      } else if (message.type == 'pong') {
-        pingTime.text = "ping time: " + (getTimer() - message.timestamp) + "ms";
-      } else if (message.type == 'map_tiles') {
+
+        // For now, the move_ok message gets the tile data
+        // piggybacked. This is because we assume the bitmap's center
+        // is the current location, so we have to update both the
+        // location and the bitmap at the same time. In the future
+        // we'll cache parts of the map and will request only areas
+        // that need it.
         if (colorMap.length == 0) buildColorMap();
         var i:int = 0;
-        mapBitmap.lock();
+        mapBitmapData.lock();
         for (var x:int = message.left; x < message.right; x++) {
           for (var y:int = message.top; y < message.bottom; y++) {
             var tileId:int = binaryPayload[i++];
-            mapBitmap.setPixel(x - location[0] + mapBitmap.width/2,
-                               y - location[1] + mapBitmap.height/2,
-                               colorMap[tileId]);
+            mapBitmapData.setPixel(x - location[0] + mapBitmapData.width/2,
+                                   y - location[1] + mapBitmapData.height/2,
+                                   colorMap[tileId]);
           }
         }
-        mapBitmap.unlock();
+        mapBitmapData.setPixel(0, 0, 0);
+        mapBitmapData.setPixel(mapBitmapData.width-1, 0, 0);
+        mapBitmapData.setPixel(mapBitmapData.width-1, mapBitmapData.height-1, 0);
+        mapBitmapData.unlock();
+        onEnterFrame(null);  // HACK: reposition the bitmap properly
+      } else if (message.type == 'pong') {
+        pingTime.text = "ping time: " + (getTimer() - message.timestamp) + "ms";
       }
     }
 
+    
     // Initialize the colorMap array to map tileId into color
     public function buildColorMap():void {
       // Interpolate between A and B, frac=1.0 means B

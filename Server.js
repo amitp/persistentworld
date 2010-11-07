@@ -122,11 +122,15 @@ net.createServer(function (socket) {
         if (message.type == 'move') {
             // NOTE: we're temporarily using remotePort as the client id
             clientPositions[socket.remotePort] = message.to;
+            var mapTiles = constructMapTiles(message.left, message.right, message.top, message.bottom);
             sendMessage({
                 type: 'move_ok',
-                timestamp: message.timestamp,
-                loc: clientPositions[socket.remotePort]
-            });
+                loc: clientPositions[socket.remotePort],
+                left: mapTiles.left,
+                right: mapTiles.right,
+                top: mapTiles.top,
+                bottom: mapTiles.bottom,
+            }, mapTiles.binaryPayload);
         } else if (message.type == 'ping') {
             sendMessage({type: 'pong', timestamp: message.timestamp});
         } else if (message.type == 'map_tiles') {
@@ -138,7 +142,7 @@ net.createServer(function (socket) {
         }
     }
 
-    function respondWithMapTiles(clientTimestamp, left, right, top, bottom) {
+    function constructMapTiles(left, right, top, bottom) {
         // Clip the rectangle to the map and make sure bounds are sane
         left = Math.floor(left);
         right = Math.floor(right);
@@ -155,22 +159,13 @@ net.createServer(function (socket) {
         for (var x = left; x < right; x++) {
             tiles.push(map.slice(x*height + top, x*height + bottom));
         }
-        sendMessage({
-            type: 'map_tiles',
-            timestamp: clientTimestamp,
+        return {
             left: left,
             right: right,
             top: top,
-            bottom: bottom
-        }, tiles.join(""));
-    }
-    
-    function respondWithGlobalState(clientTimestamp) {
-        sendMessage({
-            type: 'all_positions',
-            timestamp: clientTimestamp,
-            positions: clientPositions
-        });
+            bottom: bottom,
+            binaryPayload: tiles.join("")
+        };
     }
     
     socket.setEncoding("binary");
