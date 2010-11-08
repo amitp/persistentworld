@@ -22,7 +22,6 @@ package {
     public var colorMap:Array = [];
     public var client:Client = new Client();
     public var pingTime:TextField = new TextField();
-    public var bufferView:TextField = new TextField();
     public var location:Array = [945, 1220];
     public var moving:Boolean = false;
 
@@ -46,19 +45,13 @@ package {
       mapBitmap.scaleX = mapBitmap.scaleY = 400.0/TILES_ON_SCREEN;
       mapBitmap.smoothing = false;
 
-      mapMask.x = 40;
-      mapMask.y = 40;
-      mapParent.x = 40;
-      mapParent.y = 40;
+      mapMask.x = mapParent.x = 10;
+      mapMask.y = mapParent.y = 10;
       mapParent.addChild(mapBitmap);
       
       pingTime.x = 50;
-      pingTime.y = 440;
+      pingTime.y = 410;
       addChild(pingTime);
-      bufferView.width = 400;
-      bufferView.x = 0;
-      bufferView.y = 410;
-      addChild(bufferView);
       
       addChild(new Debug(this)).x = 410;
 
@@ -112,19 +105,6 @@ package {
         });
         
       client.onMessageCallback = handleMessage;
-      client.onSocketReceive = function():void {
-        bufferView.text = "RECV BUFFER:" + client.buffer.position + "/" + client.buffer.length;
-        if (client.buffer.length >= 8) {
-          var prevPosition:int = client.buffer.position;
-          var sizeBuffer:ByteArray = new ByteArray();
-          client.buffer.readBytes(sizeBuffer, 0, 4);
-          var len1:int = Client.binaryToInt32LittleEndian(sizeBuffer);
-          client.buffer.readBytes(sizeBuffer, 0, 4);
-          var len2:int = Client.binaryToInt32LittleEndian(sizeBuffer);
-          bufferView.text = "RECV PARTIAL:" + client.buffer.position + "/" + client.buffer.length + " " + len1 + ".." + len2 + "? " + client.buffer.bytesAvailable;
-          client.buffer.position = prevPosition;
-        }
-      };
       
       client.connect();
       client.sendMessage({
