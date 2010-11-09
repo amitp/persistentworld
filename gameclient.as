@@ -24,7 +24,8 @@ package {
     public var pingTime:TextField = new TextField();
     public var location:Array = [945, 1220];
     public var moving:Boolean = false;
-
+    public var _keyQueue:KeyboardEvent = null;  // next key that we haven't processed yet
+    
     public var animationState:Object = null;
     
     public function gameclient() {
@@ -66,43 +67,7 @@ package {
           client.deactivate();
         });
 
-      stage.addEventListener(KeyboardEvent.KEY_DOWN, function (e:KeyboardEvent):void {
-          var now:Number;
-          e.updateAfterEvent();
-          Debug.trace("KEY DOWN", e.keyCode);
-
-          var newLoc:Array = [location[0], location[1]];
-          if (e.keyCode == 39 /* RIGHT */) { newLoc[0] += WALK_STEP; }
-          else if (e.keyCode == 37 /* LEFT */) { newLoc[0] -= WALK_STEP; }
-          else if (e.keyCode == 38 /* UP */) { newLoc[1] -= WALK_STEP; }
-          else if (e.keyCode == 40 /* DOWN */) { newLoc[1] += WALK_STEP; }
-          
-          if (newLoc[0] != location[0] || newLoc[1] != location[1]) {
-            if (!moving && animationState == null) {
-              Debug.trace("MOVE REQ", location, "->", newLoc);
-              moving = true;
-              var radius:int = TILE_PADDING + TILES_ON_SCREEN;;
-              client.sendMessage({
-                  type: 'move',
-                    from: location,
-                    to: newLoc,
-                    left: newLoc[0] - radius,
-                    right: newLoc[0] + radius,
-                    top: newLoc[1] - radius,
-                    bottom: newLoc[1] + radius
-                    });
-              now = getTimer();
-              animationState = {
-                beginLocation: location,
-                endLocation: newLoc,
-                beginTime: now,
-                endTime: now + WALK_TIME
-              };
-            } else {
-              Debug.trace("ALREADY MOVING");
-            }
-          }
-        });
+      stage.addEventListener(KeyboardEvent.KEY_DOWN, onKeyDown);
         
       client.onMessageCallback = handleMessage;
       
@@ -142,10 +107,53 @@ package {
       } else {
         aX = location[0];
         aY = location[1];
+        if (_keyQueue) onKeyDown(_keyQueue, true);
       }
       if (animationState != null || e == null) {
         mapBitmap.x = mapBitmap.scaleX * (location[0] - aX - TILE_PADDING);
         mapBitmap.y = mapBitmap.scaleY * (location[1] - aY - TILE_PADDING);
+      }
+    }
+
+
+    public function onKeyDown(e:KeyboardEvent, replay:Boolean = false):void {
+      var now:Number;
+      if (!replay) Debug.trace("KEY DOWN", e.keyCode);
+
+      var newLoc:Array = [location[0], location[1]];
+      if (e.keyCode == 39 /* RIGHT */) { newLoc[0] += WALK_STEP; }
+      else if (e.keyCode == 37 /* LEFT */) { newLoc[0] -= WALK_STEP; }
+      else if (e.keyCode == 38 /* UP */) { newLoc[1] -= WALK_STEP; }
+      else if (e.keyCode == 40 /* DOWN */) { newLoc[1] += WALK_STEP; }
+          
+      if (newLoc[0] != location[0] || newLoc[1] != location[1]) {
+        if (replay) _keyQueue = null;
+        if (!moving && animationState == null) {
+          e.updateAfterEvent();
+          Debug.trace("MOVE REQ", location, "->", newLoc);
+          moving = true;
+          var radius:int = TILE_PADDING + TILES_ON_SCREEN;;
+          client.sendMessage({
+              type: 'move',
+                from: location,
+                to: newLoc,
+                left: newLoc[0] - radius,
+                right: newLoc[0] + radius,
+                top: newLoc[1] - radius,
+                bottom: newLoc[1] + radius
+                });
+          now = getTimer();
+          animationState = {
+            beginLocation: location,
+            endLocation: newLoc,
+            beginTime: now,
+            endTime: now + WALK_TIME
+          };
+        } else {
+          if (_keyQueue == null) {
+            _keyQueue = e;
+          }
+        }
       }
     }
 
@@ -178,6 +186,7 @@ package {
         mapBitmapData.setPixel(mapBitmapData.width-1, mapBitmapData.height-1, 0);
         mapBitmapData.unlock();
         onEnterFrame(null);  // HACK: reposition the bitmap properly
+        if (_keyQueue) onKeyDown(_keyQueue, true);
       } else if (message.type == 'pong') {
         pingTime.text = "ping time: " + (getTimer() - message.timestamp) + "ms";
       }
