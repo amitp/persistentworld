@@ -3,6 +3,7 @@
 // License: MIT
 
 package {
+  import amitp.*;
   import flash.events.*;
   import flash.utils.*;
   import flash.net.*;
