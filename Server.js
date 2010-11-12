@@ -29,7 +29,7 @@ http.createServer(function (request, response) {
         response.writeHead(200, {'Content-Type': 'text/xml'});
         response.write(crossdomainPolicy);
         response.end();
-    } else if (request.method == 'GET' && request.url == '/') {
+    } else if (request.method == 'GET' && request.url == '/world') {
         response.writeHead(200, {'Content-Type': 'application/x-shockwave-flash'});
         fs.readFile("gameclient-dbg.swf", 'binary', function (err, data) {
             if (err) throw err;
@@ -38,9 +38,13 @@ http.createServer(function (request, response) {
         });
     } else if (request.method == 'GET' && request.url.substr(0, 5) == 'http:') {
         // People from China are probing to see if server will act as a proxy
-        response.writeHead(403, "Your IP has been logged.");
+        response.writeHead(403, "Honeypot");
+        response.write("Your IP has been logged.")
+        response.end();
     } else {
-        response.writeHead(404);
+        response.writeHead(404, "Honeypot");
+        response.write("Request from " + request.connection.remoteAddress + " has been logged.")
+        response.end();
     }
 }).listen(8000);
 
