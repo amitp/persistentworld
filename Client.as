@@ -85,7 +85,7 @@ package {
                                     }
                                     if (onMessageCallback != null) {
                                       var message:Object = JSON.decode(jsonMessage);
-                                      if (message.type != 'pong') Debug.trace("MSG:", jsonMessage);
+                                      if (message.type != 'pong' && message.type != 'player_positions') Debug.trace("MSG:", jsonMessage);
                                       onMessageCallback(message, binaryMessage);
                                     }
                                     previousPosition = buffer.position;

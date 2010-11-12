@@ -9,6 +9,7 @@ package {
   import flash.events.*;
   import flash.utils.*;
   import flash.text.*;
+  import flash.geom.*;
   
   public class gameclient extends Sprite {
     static public var TILES_ON_SCREEN:int = 13;
@@ -20,11 +21,14 @@ package {
                                                          TILES_ON_SCREEN + 2*TILE_PADDING,
                                                          false, 0x00ccddcc);
     public var mapBitmap:Bitmap;
-
+    public var mapParent:Sprite = new Sprite();
+    public var mapOffset:Point = new Point();
+    
     public var spritesheet:Spritesheet = new oddball_char();
     public var playerStyle:Object = spritesheet.makeStyle();
     public var playerBitmap:Bitmap = new Bitmap(new BitmapData(2*2 + 8*3, 2*2 + 8*3, true, 0x00000000));
-                                                               
+    public var otherPlayers:Object = {};  // {clientId: {sprite_id: bitmap: loc:}}
+    
     public var colorMap:Array = [];
     public var client:Client = new Client();
     public var pingTime:TextField = new TextField();
@@ -43,7 +47,6 @@ package {
       mapMask.graphics.beginFill(0x000000);
       mapMask.graphics.drawRect(0, 0, 400, 400);
       mapMask.graphics.endFill();
-      var mapParent:Sprite = new Sprite();
       mapParent.mask = mapMask;
       addChild(mapParent);
       addChild(mapMask);
@@ -56,7 +59,8 @@ package {
       mapMask.y = mapParent.y = 10;
       mapParent.addChild(mapBitmap);
 
-      spritesheet.drawToBitmap(int(Math.random()*255), playerBitmap.bitmapData, playerStyle);
+      var sprite_id:int = int(Math.random()*255);
+      spritesheet.drawToBitmap(sprite_id, playerBitmap.bitmapData, playerStyle);
       playerBitmap.x = (400.0-playerBitmap.width)/2;
       playerBitmap.y = (400.0-playerBitmap.height)/2;
       mapParent.addChild(playerBitmap);
@@ -84,6 +88,10 @@ package {
       
       client.connect();
       client.sendMessage({
+          type: 'identify',
+            sprite_id: sprite_id
+            });
+      client.sendMessage({
           type: 'move',
             from: location,
             to: location,
@@ -97,7 +105,7 @@ package {
     
     public function onEnterFrame(e:Event):void {
       var time:Number = getTimer();
-      var f:Number, aX:Number, aY:Number;
+      var f:Number;
 
       if (animationState) {
         if (time < animationState.endTime) {
@@ -105,8 +113,8 @@ package {
         } else {
           f = 1.0;
         }
-        aX = (1-f) * animationState.beginLocation[0] + f * animationState.endLocation[0];
-        aY = (1-f) * animationState.beginLocation[1] + f * animationState.endLocation[1];
+        mapOffset.x = (1-f) * animationState.beginLocation[0] + f * animationState.endLocation[0];
+        mapOffset.y = (1-f) * animationState.beginLocation[1] + f * animationState.endLocation[1];
 
         if (time >= animationState.endTime) {
           if (animationState.endLocation[0] == location[0] && animationState.endLocation[1] == location[1]) {
@@ -117,17 +125,27 @@ package {
           }
         }
       } else {
-        aX = location[0];
-        aY = location[1];
+        mapOffset.x = location[0];
+        mapOffset.y = location[1];
         if (_keyQueue) onKeyDown(_keyQueue, true);
       }
       if (animationState != null || e == null) {
-        mapBitmap.x = mapBitmap.scaleX * (location[0] - aX - TILE_PADDING);
-        mapBitmap.y = mapBitmap.scaleY * (location[1] - aY - TILE_PADDING);
+        mapBitmap.x = mapBitmap.scaleX * (location[0] - mapOffset.x - TILE_PADDING);
+        mapBitmap.y = mapBitmap.scaleY * (location[1] - mapOffset.y - TILE_PADDING);
+        moveOtherPlayers();
       }
     }
 
 
+    // Make sure all other player sprites are in the right place relative to the map
+    public function moveOtherPlayers():void {
+      for each (var other:Object in otherPlayers) {
+          other.bitmap.x = playerBitmap.x + mapBitmap.scaleX * (other.loc[0] - mapOffset.x);
+          other.bitmap.y = playerBitmap.y + mapBitmap.scaleY * (other.loc[1] - mapOffset.y);
+        }
+    }
+
+    
     public function onKeyDown(e:KeyboardEvent, replay:Boolean = false):void {
       var now:Number;
       if (!replay) Debug.trace("KEY DOWN", e.keyCode);
@@ -199,6 +217,28 @@ package {
         mapBitmapData.unlock();
         onEnterFrame(null);  // HACK: reposition the bitmap properly
         if (_keyQueue) onKeyDown(_keyQueue, true);
+      } else if (message.type == 'player_positions') {
+        for each (var other:Object in message.positions) {
+            // Make sure we have an entry in otherPlayers
+            if (otherPlayers[other.id] == null) {
+              otherPlayers[other.id] = {
+                sprite_id: -1,
+                bitmap: new Bitmap(new BitmapData(playerBitmap.width, playerBitmap.height, true, 0x00000000))
+              };
+              mapParent.addChild(otherPlayers[other.id].bitmap);
+            }
+            // TODO: remove entries for players not sent to us
+            
+            // Make sure we've drawn the bitmap
+            if  (otherPlayers[other.id].sprite_id != other.sprite_id) {
+              spritesheet.drawToBitmap(other.sprite_id, otherPlayers[other.id].bitmap.bitmapData, playerStyle);
+            }
+            // Copy the updated data into our record
+            otherPlayers[other.id].sprite_id = other.sprite_id;
+            otherPlayers[other.id].loc = other.loc;
+            Debug.trace("PLAYER", other.id, mapOffset, other.loc, "vs", location);
+          }
+        moveOtherPlayers();
       } else if (message.type == 'pong') {
         pingTime.text = "ping time: " + (getTimer() - message.timestamp) + "ms";
       }

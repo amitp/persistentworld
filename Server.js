@@ -73,6 +73,8 @@ function buildMap() {
 
 
 // Server state
+var clientIds = [];
+var clientSpriteIds = {};  // clientid -> id
 var clientPositions = {};  // clientId -> {x: y:}
 var width = 2048;
 var height = 2048;
@@ -112,7 +114,7 @@ net.createServer(function (socket) {
     function sendMessage(message, binaryPayload /* optional */) {
         if (binaryPayload == null) binaryPayload = "";
         jsonMessage = JSON.stringify(message);
-        if (message.type != 'pong') {
+        if (message.type != 'pong' && message.type != 'player_positions') {
             log('sending ' + message.type + " / " + jsonMessage.length + " / " + binaryPayload.length + " " + jsonMessage);
         }
         bytes = (int32ToBinaryLittleEndian(jsonMessage.length)
@@ -123,9 +125,14 @@ net.createServer(function (socket) {
     }
     
     function handleMessage(message, binaryMessage) {
-        if (message.type == 'move') {
+        if (message.type == 'identify') {
+            clientIds.push(socket.remotePort);
+            clientSpriteIds[socket.remotePort] = message.sprite_id;
+        } else if (message.type == 'move') {
             // NOTE: we're temporarily using remotePort as the client id
             clientPositions[socket.remotePort] = message.to;
+
+            // TODO: make sure that the move is valid
             var mapTiles = constructMapTiles(message.left, message.right, message.top, message.bottom);
             sendMessage({
                 type: 'move_ok',
@@ -137,6 +144,18 @@ net.createServer(function (socket) {
             }, mapTiles.binaryPayload);
         } else if (message.type == 'ping') {
             sendMessage({type: 'pong', timestamp: message.timestamp});
+
+            // For now, send back all other client positions. In the
+            // future, set up a map structure that has a last-changed
+            // time per tile, and only send back things that have
+            // moved.
+            var otherPositions = [];
+            clientIds.forEach(function (clientId) {
+                if (clientId != socket.remotePort && clientSpriteIds[clientId]) {
+                    otherPositions.push({id: clientId, sprite_id: clientSpriteIds[clientId], loc: clientPositions[clientId]});
+                }
+            });
+            sendMessage({type: 'player_positions', positions: otherPositions});
         } else if (message.type == 'map_tiles') {
             respondWithMapTiles(message.timestamp,
                                 message.left, message.right,
@@ -243,6 +262,8 @@ net.createServer(function (socket) {
         log("END");
         // TODO: need to track this socket's id, and remove from clientPositions here, or on timeout
         delete clientPositions[socket.remotePort];
+        delete clientSpriteIds[socket.remotePort];
+        // TODO: remove socket.remotePort from clientIds
         socket.end();
     });
 }).listen(8001);
