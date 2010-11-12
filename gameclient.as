@@ -4,22 +4,27 @@
 
 package {
   import amitp.*;
+  import assets.*;
   import flash.display.*;
   import flash.events.*;
   import flash.utils.*;
   import flash.text.*;
   
   public class gameclient extends Sprite {
-    static public var TILES_ON_SCREEN:int = 25;
+    static public var TILES_ON_SCREEN:int = 13;
     static public var TILE_PADDING:int = 3;
     static public var WALK_TIME:Number = 150;
-    static public var WALK_STEP:int = 2;
+    static public var WALK_STEP:int = 1;
     
     public var mapBitmapData:BitmapData = new BitmapData(TILES_ON_SCREEN + 2*TILE_PADDING,
                                                          TILES_ON_SCREEN + 2*TILE_PADDING,
                                                          false, 0x00ccddcc);
     public var mapBitmap:Bitmap;
 
+    public var spritesheet:Spritesheet = new oddball_char();
+    public var playerStyle:Object = spritesheet.makeStyle();
+    public var playerBitmap:Bitmap = new Bitmap(new BitmapData(2*2 + 8*3, 2*2 + 8*3, true, 0x00000000));
+                                                               
     public var colorMap:Array = [];
     public var client:Client = new Client();
     public var pingTime:TextField = new TextField();
@@ -42,7 +47,7 @@ package {
       mapParent.mask = mapMask;
       addChild(mapParent);
       addChild(mapMask);
-      
+
       mapBitmap = new Bitmap(mapBitmapData);
       mapBitmap.scaleX = mapBitmap.scaleY = 400.0/TILES_ON_SCREEN;
       mapBitmap.smoothing = false;
@@ -50,6 +55,11 @@ package {
       mapMask.x = mapParent.x = 10;
       mapMask.y = mapParent.y = 10;
       mapParent.addChild(mapBitmap);
+
+      spritesheet.drawToBitmap(int(Math.random()*255), playerBitmap.bitmapData, playerStyle);
+      playerBitmap.x = (400.0-playerBitmap.width)/2;
+      playerBitmap.y = (400.0-playerBitmap.height)/2;
+      mapParent.addChild(playerBitmap);
       
       pingTime.x = 50;
       pingTime.y = 410;
@@ -101,6 +111,7 @@ package {
         if (time >= animationState.endTime) {
           if (animationState.endLocation[0] == location[0] && animationState.endLocation[1] == location[1]) {
             animationState = null;
+            e = null;  // hack to make sure we still set x,y
           } else {
             Debug.trace("delaying animation removal ", animationState.endLocation, location);
           }
