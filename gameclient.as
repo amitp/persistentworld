@@ -27,16 +27,19 @@ package {
     public var spritesheet:Spritesheet = new oddball_char();
     public var playerStyle:Object = spritesheet.makeStyle();
     public var playerBitmap:Bitmap = new Bitmap(new BitmapData(2*2 + 8*3, 2*2 + 8*3, true, 0x00000000));
-    public var otherPlayers:Object = {};  // {clientId: {sprite_id: bitmap: loc:}}
-    
-    public var colorMap:Array = [];
-    public var client:Client = new Client();
-    public var pingTime:TextField = new TextField();
     public var location:Array = [945, 1220];
     public var moving:Boolean = false;
     public var _keyQueue:KeyboardEvent = null;  // next key that we haven't processed yet
     
     public var animationState:Object = null;
+
+    public var otherPlayers:Object = {};  // {clientId: {sprite_id: bitmap: loc:}}
+    
+    public var colorMap:Array = [];
+    public var client:Client = new Client();
+    public var pingTime:TextField = new TextField();
+    public var inputField:TextField = new TextField();
+    public var outputMessages:TextField = new TextField();
     
     public function gameclient() {
       stage.scaleMode = 'noScale';
@@ -65,9 +68,36 @@ package {
       playerBitmap.y = (400.0-playerBitmap.height)/2;
       mapParent.addChild(playerBitmap);
       
-      pingTime.x = 50;
-      pingTime.y = 410;
+      pingTime.x = 10;
+      pingTime.y = 10;
       addChild(pingTime);
+
+      inputField.x = 10;
+      inputField.y = 410;
+      inputField.width = 398;
+      inputField.height = 15;
+      inputField.border = true;
+      inputField.borderColor = 0x000099;
+      inputField.backgroundColor = 0x99ffdd;
+      inputField.type = TextFieldType.INPUT;
+      addChild(inputField);
+
+      inputField.addEventListener(FocusEvent.FOCUS_IN, function (e:FocusEvent):void {
+          inputField.background = true;
+        });
+      inputField.addEventListener(FocusEvent.FOCUS_OUT, function (e:FocusEvent):void {
+          inputField.background = false;
+        });
+
+      outputMessages.x = 10;
+      outputMessages.y = 430;
+      outputMessages.width = 398;
+      outputMessages.height = 75;
+      outputMessages.border = true;
+      outputMessages.borderColor = 0x666600;
+      outputMessages.selectable = false;
+      outputMessages.text = "Welcome to Nakai's secret volcano island.\nClick to focus, arrows to move, Enter to chat.";
+      addChild(outputMessages);
       
       addChild(new Debug(this)).x = 410;
 
@@ -148,9 +178,27 @@ package {
     
     public function onKeyDown(e:KeyboardEvent, replay:Boolean = false):void {
       var now:Number;
-      if (!replay) Debug.trace("KEY DOWN", e.keyCode);
+      if (!replay) Debug.trace("STAGE KEY DOWN", e.keyCode, stage.focus == null? "/stage":"/input");
 
       var newLoc:Array = [location[0], location[1]];
+      if (e.keyCode == 13 /* Enter */) {
+        if (stage.focus == inputField) {
+          // End text entry by sending to server
+          client.sendMessage({
+              type: 'message',
+                message: inputField.text
+                });
+          inputField.text = "";
+          stage.focus = null;
+        } else {
+          // Start text entry
+          stage.focus = inputField;
+        }
+      }
+
+      // While entering text, other keys don't apply
+      if (stage.focus == inputField) return;
+      
       if (e.keyCode == 39 /* RIGHT */) { newLoc[0] += WALK_STEP; }
       else if (e.keyCode == 37 /* LEFT */) { newLoc[0] -= WALK_STEP; }
       else if (e.keyCode == 38 /* UP */) { newLoc[1] -= WALK_STEP; }
@@ -239,6 +287,9 @@ package {
             Debug.trace("PLAYER", other.id, mapOffset, other.loc, "vs", location);
           }
         moveOtherPlayers();
+      } else if (message.type == 'messages') {
+        outputMessages.text = outputMessages.text + "\n" + message.messages.join("\n");
+        outputMessages.scrollV = outputMessages.maxScrollV;
       } else if (message.type == 'pong') {
         pingTime.text = "ping time: " + (getTimer() - message.timestamp) + "ms";
       }

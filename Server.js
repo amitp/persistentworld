@@ -73,9 +73,7 @@ function buildMap() {
 
 
 // Server state
-var clientIds = [];
-var clientSpriteIds = {};  // clientid -> id
-var clientPositions = {};  // clientId -> {x: y:}
+var clients = {};
 var width = 2048;
 var height = 2048;
 var map = buildMap();  // width X height tile ids (bytes)
@@ -126,17 +124,16 @@ net.createServer(function (socket) {
     
     function handleMessage(message, binaryMessage) {
         if (message.type == 'identify') {
-            clientIds.push(socket.remotePort);
-            clientSpriteIds[socket.remotePort] = message.sprite_id;
+            clients[socket.remotePort].sprite_id = message.sprite_id;
         } else if (message.type == 'move') {
             // NOTE: we're temporarily using remotePort as the client id
-            clientPositions[socket.remotePort] = message.to;
+            clients[socket.remotePort].loc = message.to;
 
             // TODO: make sure that the move is valid
             var mapTiles = constructMapTiles(message.left, message.right, message.top, message.bottom);
             sendMessage({
                 type: 'move_ok',
-                loc: clientPositions[socket.remotePort],
+                loc: clients[socket.remotePort].loc,
                 left: mapTiles.left,
                 right: mapTiles.right,
                 top: mapTiles.top,
@@ -150,12 +147,23 @@ net.createServer(function (socket) {
             // time per tile, and only send back things that have
             // moved.
             var otherPositions = [];
-            clientIds.forEach(function (clientId) {
-                if (clientId != socket.remotePort && clientSpriteIds[clientId]) {
-                    otherPositions.push({id: clientId, sprite_id: clientSpriteIds[clientId], loc: clientPositions[clientId]});
+            for (clientId in clients) {
+                if (clientId != socket.remotePort) {
+                    otherPositions.push({id: clientId,
+                                         sprite_id: clients[clientId].sprite_id,
+                                         loc: clients[clientId].loc
+                                        });
                 }
-            });
+            }
             sendMessage({type: 'player_positions', positions: otherPositions});
+            if (clients[socket.remotePort].messages.length > 0) {
+                sendMessage({type: 'messages', messages: clients[socket.remotePort].messages});
+                clients[socket.remotePort].messages = [];
+            }
+        } else if (message.type == 'message') {
+            for (clientId in clients) {
+                clients[clientId].messages.push("guest"+clientId+": "+message.message);
+            }
         } else if (message.type == 'map_tiles') {
             respondWithMapTiles(message.timestamp,
                                 message.left, message.right,
@@ -196,6 +204,8 @@ net.createServer(function (socket) {
     
     socket.addListener("connect", function () {
         log("CONNECT");
+        if (clients[socket.remotePort]) log('ERROR: client id already in clients map');
+        clients[socket.remotePort] = {id: socket.remotePort, messages: []};
     });
     socket.addListener("error", function (e) {
         log("ERROR on socket: " + e);
@@ -260,10 +270,7 @@ net.createServer(function (socket) {
     });
     socket.addListener("end", function () {
         log("END");
-        // TODO: need to track this socket's id, and remove from clientPositions here, or on timeout
-        delete clientPositions[socket.remotePort];
-        delete clientSpriteIds[socket.remotePort];
-        // TODO: remove socket.remotePort from clientIds
+        delete clients[socket.remotePort];
         socket.end();
     });
 }).listen(8001);
