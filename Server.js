@@ -29,9 +29,10 @@ http.createServer(function (request, response) {
         response.writeHead(200, {'Content-Type': 'text/xml'});
         response.write(crossdomainPolicy);
         response.end();
-    } else if (request.method == 'GET' && request.url == '/world') {
+    } else if (request.method == 'GET' && (request.url == '/world' || request.url == '/debug')) {
         response.writeHead(200, {'Content-Type': 'application/x-shockwave-flash'});
-        fs.readFile("gameclient-dbg.swf", 'binary', function (err, data) {
+        fs.readFile((request.url == '/debug')? "gameclient-dbg.swf" : "gameclient.swf",
+                    'binary', function (err, data) {
             if (err) throw err;
             response.write(data, 'binary');
             response.end();
