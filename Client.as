@@ -133,12 +133,13 @@ package {
     }
                               
     public function activate():void {
-      if (!pingTimer.running) pingTimer.start();
       pingTimer.delay = pingTimerDelayWhileActive;
+      if (!pingTimer.running) pingTimer.start();
     }
 
     public function deactivate():void {
       pingTimer.delay = pingTimerDelayWhileInactive;
+      if (!pingTimer.running) pingTimer.start();
     }
 
     public function sendMessage(message:Object, binaryPayload:ByteArray=null):void {
