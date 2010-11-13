@@ -12,6 +12,8 @@ package {
   public class Client {
     public var socket:Socket = new Socket();
     public var buffer:ByteArray = new ByteArray();
+    public var pingTimerDelayWhileActive:Number = 1000/5;
+    public var pingTimerDelayWhileInactive:Number = 1000/1;
     public var pingTimer:Timer = new Timer(1000/5, 0);
 
     public var onMessageCallback:Function = null;
@@ -85,7 +87,6 @@ package {
                                     }
                                     if (onMessageCallback != null) {
                                       var message:Object = JSON.decode(jsonMessage);
-                                      if (message.type != 'pong' && message.type != 'player_positions') Debug.trace("MSG:", jsonMessage);
                                       onMessageCallback(message, binaryMessage);
                                     }
                                     previousPosition = buffer.position;
@@ -132,11 +133,12 @@ package {
     }
                               
     public function activate():void {
-      pingTimer.start();
+      if (!pingTimer.running) pingTimer.start();
+      pingTimer.delay = pingTimerDelayWhileActive;
     }
 
     public function deactivate():void {
-      pingTimer.stop();
+      pingTimer.delay = pingTimerDelayWhileInactive;
     }
 
     public function sendMessage(message:Object, binaryPayload:ByteArray=null):void {
