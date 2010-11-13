@@ -66,33 +66,43 @@ package {
 
 
     public function setupIntroUi():void {
-      var title:DisplayObject = Text.createTextLine("Welcome to Nakai's secret volcano island.", 50, 50, {fontSize: 24});
+      var preview:Sprite = new Sprite();
+      var title:DisplayObject = Text.createTextLine("Welcome to Nakai's secret volcano island.", 50, 50, {fontSize: 18});
       var label:DisplayObject = Text.createTextLine("Enter your name:", 150, 180, {fontSize: 16});
       var playerNameEntry:TextField = new TextField();
 
       function introUiCleanup():void {
         stage.focus = null;
         playerName = playerNameEntry.text;
+        // TODO: for proper cleanup, need to remove event listeners
+        preview.removeChild(previewBitmap);
         removeChild(playerNameEntry);
+        removeChild(preview);
         removeChild(label);
         removeChild(title);
-        removeChild(previewBitmap);
         setupGameUi();
       }
 
       var style:Object = spritesheet.makeStyle();
       style.scale = 13;
       style.padding = 6;
-      style.bevelWidth = 3;
-      style.bevelBlur = 10;
-      style.glowAlpha = 1.0;
-      style.glowBlur = 5;
+      style.bevelWidth = 2;
+      style.bevelBlur = 4;
+      style.outlineAlpha = 1.0;
+      style.outlineBlur = 5;
       var previewBitmap:Bitmap = new Bitmap(new BitmapData(2*style.padding + 8*style.scale, 2*style.padding + 8*style.scale, true, 0x000000));
       style.saturation = 0.9;
       spritesheet.drawToBitmap(spriteId, previewBitmap.bitmapData, style);
       previewBitmap.x = 30;
       previewBitmap.y = 130;
-      addChild(previewBitmap);
+      preview.addChild(previewBitmap);
+
+      preview.addEventListener(MouseEvent.CLICK, function (e:MouseEvent):void {
+          spriteId = int(Math.random()*255);
+          spritesheet.drawToBitmap(spriteId, previewBitmap.bitmapData, style);
+          e.updateAfterEvent();
+        });
+      addChild(preview);
       
       playerNameEntry.x = 150;
       playerNameEntry.y = 200-13;
