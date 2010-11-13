@@ -87,6 +87,7 @@ package {
                                     }
                                     if (onMessageCallback != null) {
                                       var message:Object = JSON.decode(jsonMessage);
+                                      if (message.type == 'pong') _lastPingTime = getTimer() - message.timestamp;
                                       onMessageCallback(message, binaryMessage);
                                     }
                                     previousPosition = buffer.position;
@@ -170,9 +171,10 @@ package {
       socket.writeBytes(packet);
       socket.flush();
     }
-    
+
+    private var _lastPingTime:Number = 0.0;
     public function onTimer(e:TimerEvent):void {
-      sendMessage({type: 'ping', timestamp: getTimer()});
+      sendMessage({type: 'ping', timestamp: getTimer(), ping_time: (_lastPingTime > 0.0)? _lastPingTime : null});
     }
   }
 }
