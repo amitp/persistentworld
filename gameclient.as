@@ -10,6 +10,7 @@ package {
   import flash.utils.*;
   import flash.text.*;
   import flash.geom.*;
+  import com.gskinner.motion.GTween;
   
   public class gameclient extends Sprite {
     static public var TILES_ON_SCREEN:int = 13;
@@ -23,6 +24,8 @@ package {
     public var mapBitmap:Bitmap;
     public var mapParent:Sprite = new Sprite();
     public var mapOffset:Point = new Point();
+
+    public var clickToFocusMessage:Sprite = new Sprite();
     
     public var spritesheet:Spritesheet = new oddball_char();
     public var spriteId:int = int(Math.random()*255);
@@ -50,13 +53,27 @@ package {
 
       addChild(new Debug(this)).x = 410;
 
+      clickToFocusMessage.x = 100;
+      clickToFocusMessage.y = 300;
+      clickToFocusMessage.graphics.beginFill(0x000000, 0.7);
+      clickToFocusMessage.graphics.drawRoundRect(0, 0, 200, 90, 35, 35);
+      clickToFocusMessage.graphics.endFill();
+      clickToFocusMessage.addChild(Text.createTextLine("Click to activate", 50, 50, {fontSize:14, color: 0xffffff}));
+      addChild(clickToFocusMessage);
+
+      var tween:GTween = new GTween(clickToFocusMessage, 1, {},
+                                    {onComplete: function():void { clickToFocusMessage.visible =
+                                                                   (clickToFocusMessage.alpha != 0.0); }});
       stage.addEventListener(Event.ACTIVATE, function (e:Event):void {
-          Debug.trace("ACTIVATE -- got focus, now use arrow keys");
           client.activate();
+          tween.duration = 0.15;
+          tween.setValue('alpha', 0.0);
         });
       stage.addEventListener(Event.DEACTIVATE, function (e:Event):void {
-          Debug.trace("DEACTIVATE -- lost focus, click to activate");
           client.deactivate();
+          clickToFocusMessage.visible = true;
+          tween.duration = 1.5;
+          tween.setValue('alpha', 1.0);
         });
       
       client.onMessageCallback = handleMessage;
@@ -181,8 +198,12 @@ package {
       outputMessages.height = 100;
       outputMessages.border = true;
       outputMessages.borderColor = 0x666600;
-      outputMessages.text = "Welcome to Nakai's secret volcano island.\nClick to focus, arrows to move, Enter to chat.";
+      outputMessages.text = "Arrows to move. Enter to chat.";
       addChild(outputMessages);
+
+      // Move this to the top
+      removeChild(clickToFocusMessage);
+      addChild(clickToFocusMessage);
       
       addEventListener(Event.ENTER_FRAME, onEnterFrame);
       
