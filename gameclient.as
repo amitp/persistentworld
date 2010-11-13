@@ -63,6 +63,7 @@ package {
       mapParent.addChild(mapBitmap);
 
       var sprite_id:int = int(Math.random()*255);
+      playerStyle.saturation = 0.9;
       spritesheet.drawToBitmap(sprite_id, playerBitmap.bitmapData, playerStyle);
       playerBitmap.x = (400.0-playerBitmap.width)/2;
       playerBitmap.y = (400.0-playerBitmap.height)/2;
@@ -92,10 +93,9 @@ package {
       outputMessages.x = 10;
       outputMessages.y = 430;
       outputMessages.width = 398;
-      outputMessages.height = 75;
+      outputMessages.height = 100;
       outputMessages.border = true;
       outputMessages.borderColor = 0x666600;
-      outputMessages.selectable = false;
       outputMessages.text = "Welcome to Nakai's secret volcano island.\nClick to focus, arrows to move, Enter to chat.";
       addChild(outputMessages);
       

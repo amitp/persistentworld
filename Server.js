@@ -259,7 +259,7 @@ net.createServer(function (socket) {
                         message = null;
                     }
                     if (message != null) {
-                        if (message.type != 'ping') log('handle message ' + jsonMessage);
+                        if (message.type != 'ping') log('handle message ' + message.type + jsonMessage);
                         handleMessage(message);
                     }
                 } else {
