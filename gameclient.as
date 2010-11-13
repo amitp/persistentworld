@@ -178,7 +178,7 @@ package {
     
     public function onKeyDown(e:KeyboardEvent, replay:Boolean = false):void {
       var now:Number;
-      if (!replay) Debug.trace("STAGE KEY DOWN", e.keyCode, stage.focus == null? "/stage":"/input");
+      if (!replay) Debug.trace("KEY DOWN", e.keyCode, stage.focus == null? "/stage":"/input");
 
       var newLoc:Array = [location[0], location[1]];
       if (e.keyCode == 13 /* Enter */) {
@@ -208,7 +208,6 @@ package {
         if (replay) _keyQueue = null;
         if (!moving && animationState == null) {
           e.updateAfterEvent();
-          Debug.trace("MOVE REQ", location, "->", newLoc);
           moving = true;
           var radius:int = TILE_PADDING + TILES_ON_SCREEN;;
           client.sendMessage({
@@ -239,7 +238,6 @@ package {
     public function handleMessage(message:Object, binaryPayload:ByteArray):void {
       if (message.type == 'move_ok') {
         moving = false;
-        Debug.trace("MOVE_OK", message.type, message.loc);
         location = message.loc;
 
         // For now, the move_ok message gets the tile data
@@ -284,7 +282,6 @@ package {
             // Copy the updated data into our record
             otherPlayers[other.id].sprite_id = other.sprite_id;
             otherPlayers[other.id].loc = other.loc;
-            Debug.trace("PLAYER", other.id, mapOffset, other.loc, "vs", location);
           }
         moveOtherPlayers();
       } else if (message.type == 'messages') {
