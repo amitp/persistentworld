@@ -174,7 +174,9 @@ package {
 
     private var _lastPingTime:Number = 0.0;
     public function onTimer(e:TimerEvent):void {
-      sendMessage({type: 'ping', timestamp: getTimer(), ping_time: (_lastPingTime > 0.0)? _lastPingTime : null});
+      if (socket.connected) {
+        sendMessage({type: 'ping', timestamp: getTimer(), ping_time: (_lastPingTime > 0.0)? _lastPingTime : null});
+      }
     }
   }
 }

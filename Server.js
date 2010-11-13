@@ -125,6 +125,7 @@ net.createServer(function (socket) {
     
     function handleMessage(message, binaryMessage) {
         if (message.type == 'identify') {
+            clients[socket.remotePort].name = message.name;
             clients[socket.remotePort].sprite_id = message.sprite_id;
         } else if (message.type == 'move') {
             // NOTE: we're temporarily using remotePort as the client id
@@ -149,8 +150,9 @@ net.createServer(function (socket) {
             // moved.
             var otherPositions = [];
             for (clientId in clients) {
-                if (clientId != socket.remotePort) {
+                if (clientId != socket.remotePort && clients[clientId].name != null) {
                     otherPositions.push({id: clientId,
+                                         name: clients[clientId].name,
                                          sprite_id: clients[clientId].sprite_id,
                                          loc: clients[clientId].loc
                                         });
@@ -163,7 +165,7 @@ net.createServer(function (socket) {
             }
         } else if (message.type == 'message') {
             for (clientId in clients) {
-                clients[clientId].messages.push("guest"+clientId+": "+message.message);
+                clients[clientId].messages.push(clients[clientId].name+": "+message.message);
             }
         } else if (message.type == 'map_tiles') {
             respondWithMapTiles(message.timestamp,
@@ -253,7 +255,7 @@ net.createServer(function (socket) {
                     buffer = buffer.slice(8 + jsonLength + binaryLength);
                     
                     try {
-                        message = JSON.parse(jsonMessage); 
+                        message = JSON.parse(jsonMessage);
                     } catch (e) {
                         log('error ' + e.message + ' while parsing: ' + JSON.stringify(jsonMessage));
                         message = null;

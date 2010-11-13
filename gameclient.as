@@ -25,6 +25,8 @@ package {
     public var mapOffset:Point = new Point();
     
     public var spritesheet:Spritesheet = new oddball_char();
+    public var spriteId:int = int(Math.random()*255);
+    public var playerName:String = "guest";
     public var playerStyle:Object = spritesheet.makeStyle();
     public var playerBitmap:Bitmap = new Bitmap(new BitmapData(2*2 + 8*3, 2*2 + 8*3, true, 0x00000000));
     public var location:Array = [945, 1220];
@@ -46,6 +48,80 @@ package {
       stage.align = 'TL';
       stage.frameRate = 30;
 
+      addChild(new Debug(this)).x = 410;
+
+      stage.addEventListener(Event.ACTIVATE, function (e:Event):void {
+          Debug.trace("ACTIVATE -- got focus, now use arrow keys");
+          client.activate();
+        });
+      stage.addEventListener(Event.DEACTIVATE, function (e:Event):void {
+          Debug.trace("DEACTIVATE -- lost focus, click to activate");
+          client.deactivate();
+        });
+      
+      client.onMessageCallback = handleMessage;
+      client.connect();
+      setupIntroUi();
+    }
+
+
+    public function setupIntroUi():void {
+      var title:DisplayObject = Text.createTextLine("Welcome to Nakai's secret volcano island.", 50, 50, {fontSize: 24});
+      var label:DisplayObject = Text.createTextLine("Enter your name:", 150, 180, {fontSize: 16});
+      var playerNameEntry:TextField = new TextField();
+
+      function introUiCleanup():void {
+        stage.focus = null;
+        playerName = playerNameEntry.text;
+        removeChild(playerNameEntry);
+        removeChild(label);
+        removeChild(title);
+        removeChild(previewBitmap);
+        setupGameUi();
+      }
+
+      var style:Object = spritesheet.makeStyle();
+      style.scale = 13;
+      style.padding = 6;
+      style.bevelWidth = 3;
+      style.bevelBlur = 10;
+      style.glowAlpha = 1.0;
+      style.glowBlur = 5;
+      var previewBitmap:Bitmap = new Bitmap(new BitmapData(2*style.padding + 8*style.scale, 2*style.padding + 8*style.scale, true, 0x000000));
+      style.saturation = 0.9;
+      spritesheet.drawToBitmap(spriteId, previewBitmap.bitmapData, style);
+      previewBitmap.x = 30;
+      previewBitmap.y = 130;
+      addChild(previewBitmap);
+      
+      playerNameEntry.x = 150;
+      playerNameEntry.y = 200-13;
+      playerNameEntry.width = 200;
+      playerNameEntry.height = 15;
+      playerNameEntry.border = true;
+      playerNameEntry.borderColor = 0x009966;
+      playerNameEntry.backgroundColor = 0x99ffdd;
+      playerNameEntry.type = TextFieldType.INPUT;
+      playerNameEntry.maxChars = 8;
+      playerNameEntry.restrict = "A-Za-z";
+      playerNameEntry.addEventListener(FocusEvent.FOCUS_IN, function (e:FocusEvent):void {
+          playerNameEntry.background = true;
+        });
+      playerNameEntry.addEventListener(FocusEvent.FOCUS_OUT, function (e:FocusEvent):void {
+          playerNameEntry.background = false;
+        });
+      playerNameEntry.addEventListener(KeyboardEvent.KEY_UP, function (e:KeyboardEvent):void {
+          if (e.keyCode == 13 /* Enter */ && playerNameEntry.text.length > 0) introUiCleanup();
+        });
+            
+      addChild(playerNameEntry);
+      addChild(label);
+      addChild(title);
+      stage.focus = playerNameEntry;
+    }
+
+    
+    public function setupGameUi():void {
       var mapMask:Shape = new Shape();
       mapMask.graphics.beginFill(0x000000);
       mapMask.graphics.drawRect(0, 0, 400, 400);
@@ -62,9 +138,8 @@ package {
       mapMask.y = mapParent.y = 10;
       mapParent.addChild(mapBitmap);
 
-      var sprite_id:int = int(Math.random()*255);
       playerStyle.saturation = 0.9;
-      spritesheet.drawToBitmap(sprite_id, playerBitmap.bitmapData, playerStyle);
+      spritesheet.drawToBitmap(spriteId, playerBitmap.bitmapData, playerStyle);
       playerBitmap.x = (400.0-playerBitmap.width)/2;
       playerBitmap.y = (400.0-playerBitmap.height)/2;
       mapParent.addChild(playerBitmap);
@@ -99,27 +174,14 @@ package {
       outputMessages.text = "Welcome to Nakai's secret volcano island.\nClick to focus, arrows to move, Enter to chat.";
       addChild(outputMessages);
       
-      addChild(new Debug(this)).x = 410;
-
       addEventListener(Event.ENTER_FRAME, onEnterFrame);
       
-      stage.addEventListener(Event.ACTIVATE, function (e:Event):void {
-          Debug.trace("ACTIVATE -- got focus, now use arrow keys");
-          client.activate();
-        });
-      stage.addEventListener(Event.DEACTIVATE, function (e:Event):void {
-          Debug.trace("DEACTIVATE -- lost focus, click to activate");
-          client.deactivate();
-        });
-
       stage.addEventListener(KeyboardEvent.KEY_DOWN, onKeyDown);
         
-      client.onMessageCallback = handleMessage;
-      
-      client.connect();
       client.sendMessage({
           type: 'identify',
-            sprite_id: sprite_id
+            name: playerName,
+            sprite_id: spriteId
             });
       client.sendMessage({
           type: 'move',
