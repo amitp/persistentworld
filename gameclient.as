@@ -23,7 +23,8 @@ package {
                                                          false, 0x00ccddcc);
     public var mapBitmap:Bitmap;
     public var mapParent:Sprite = new Sprite();
-    public var mapOffset:Point = new Point();
+
+    public var camera:Object = { x: 0, y: 0, z: 0 };
 
     public var clickToFocusMessage:Sprite = new Sprite();
     
@@ -138,6 +139,9 @@ package {
           playerNameEntry.background = false;
         });
       playerNameEntry.addEventListener(KeyboardEvent.KEY_UP, function (e:KeyboardEvent):void {
+          if (e.keyCode == 13 && playerNameEntry.text.length == 0) playerNameEntry.text = "Guest"; // HACK: for quicker testing
+
+          
           if (e.keyCode == 13 /* Enter */ && playerNameEntry.text.length > 0) introUiCleanup();
         });
             
@@ -236,8 +240,8 @@ package {
         } else {
           f = 1.0;
         }
-        mapOffset.x = (1-f) * animationState.beginLocation[0] + f * animationState.endLocation[0];
-        mapOffset.y = (1-f) * animationState.beginLocation[1] + f * animationState.endLocation[1];
+        camera.x = (1-f) * animationState.beginLocation[0] + f * animationState.endLocation[0];
+        camera.y = (1-f) * animationState.beginLocation[1] + f * animationState.endLocation[1];
 
         if (time >= animationState.endTime) {
           if (animationState.endLocation[0] == location[0] && animationState.endLocation[1] == location[1]) {
@@ -248,13 +252,13 @@ package {
           }
         }
       } else {
-        mapOffset.x = location[0];
-        mapOffset.y = location[1];
+        camera.x = location[0];
+        camera.y = location[1];
         if (_keyQueue) onKeyDown(_keyQueue, true);
       }
       if (animationState != null || e == null) {
-        mapBitmap.x = mapBitmap.scaleX * (location[0] - mapOffset.x - TILE_PADDING);
-        mapBitmap.y = mapBitmap.scaleY * (location[1] - mapOffset.y - TILE_PADDING);
+        mapBitmap.x = mapBitmap.scaleX * (location[0] - camera.x - TILE_PADDING);
+        mapBitmap.y = mapBitmap.scaleY * (location[1] - camera.y - TILE_PADDING);
         moveOtherPlayers();
       }
     }
@@ -263,8 +267,8 @@ package {
     // Make sure all other player sprites are in the right place relative to the map
     public function moveOtherPlayers():void {
       for each (var other:Object in otherPlayers) {
-          other.bitmap.x = playerBitmap.x + mapBitmap.scaleX * (other.loc[0] - mapOffset.x);
-          other.bitmap.y = playerBitmap.y + mapBitmap.scaleY * (other.loc[1] - mapOffset.y);
+          other.bitmap.x = playerBitmap.x + mapBitmap.scaleX * (other.loc[0] - camera.x);
+          other.bitmap.y = playerBitmap.y + mapBitmap.scaleY * (other.loc[1] - camera.y);
         }
     }
 
