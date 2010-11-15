@@ -18,10 +18,17 @@ package {
     static public var WALK_TIME:Number = 150;
     static public var WALK_STEP:int = 1;
     
-    public var mapBitmapData:BitmapData = new BitmapData(TILES_ON_SCREEN + 2*TILE_PADDING,
-                                                         TILES_ON_SCREEN + 2*TILE_PADDING,
+    public var mapBitmapData:BitmapData = new BitmapData(2*TILES_ON_SCREEN + 2*TILE_PADDING,
+                                                         2*TILES_ON_SCREEN + 2*TILE_PADDING,
                                                          false, 0x00ccddcc);
     public var mapBitmap:Bitmap;
+    // The map area contains all the tile blocks and other playersn,
+    // positioned in absolute coordinate space. Moving the camera
+    // means moving and zooming the map area within the map
+    // parent. You can think of the map parent as being a "window" on
+    // top of the map area.
+    static public var mapScale:Number = 3.0 * 8;
+    public var mapArea:Sprite = new Sprite();
     public var mapParent:Sprite = new Sprite();
 
     public var camera:Object = { x: 0, y: 0, z: 0 };
@@ -79,7 +86,8 @@ package {
       
       client.onMessageCallback = handleMessage;
       client.connect();
-      setupIntroUi();
+      // setupIntroUi();
+      setupGameUi();
     }
 
 
@@ -158,21 +166,23 @@ package {
       mapMask.graphics.drawRect(0, 0, 400, 400);
       mapMask.graphics.endFill();
       mapParent.mask = mapMask;
+      mapMask.x = mapParent.x = 10;
+      mapMask.y = mapParent.y = 10;
       addChild(mapParent);
       addChild(mapMask);
 
       mapBitmap = new Bitmap(mapBitmapData);
-      mapBitmap.scaleX = mapBitmap.scaleY = 400.0/TILES_ON_SCREEN;
+      mapBitmap.scaleX = mapBitmap.scaleY = mapScale;
       mapBitmap.smoothing = false;
 
-      mapMask.x = mapParent.x = 10;
-      mapMask.y = mapParent.y = 10;
-      mapParent.addChild(mapBitmap);
-
+      mapArea.addChild(mapBitmap);
+      mapParent.addChild(mapArea);
+      
       playerStyle.saturation = 0.9;
       spritesheet.drawToBitmap(spriteId, playerBitmap.bitmapData, playerStyle);
-      playerBitmap.x = (400.0-playerBitmap.width)/2;
-      playerBitmap.y = (400.0-playerBitmap.height)/2;
+      // TODO: why 1.75? calculate this properly:
+      playerBitmap.x = TILES_ON_SCREEN/2*mapScale + 1.75*mapScale;
+      playerBitmap.y = TILES_ON_SCREEN/2*mapScale + 1.75*mapScale;
       mapParent.addChild(playerBitmap);
       
       pingTime.x = 10;
@@ -227,6 +237,7 @@ package {
             top: location[1] - TILES_ON_SCREEN,
             bottom: location[1] + TILES_ON_SCREEN
             });
+      onEnterFrame(null);
     }
 
     
@@ -257,8 +268,8 @@ package {
         if (_keyQueue) onKeyDown(_keyQueue, true);
       }
       if (animationState != null || e == null) {
-        mapBitmap.x = mapBitmap.scaleX * (location[0] - camera.x - TILE_PADDING);
-        mapBitmap.y = mapBitmap.scaleY * (location[1] - camera.y - TILE_PADDING);
+        mapArea.x = -mapScale * camera.x + 200;
+        mapArea.y = -mapScale * camera.y + 200;
         moveOtherPlayers();
       }
     }
@@ -267,8 +278,8 @@ package {
     // Make sure all other player sprites are in the right place relative to the map
     public function moveOtherPlayers():void {
       for each (var other:Object in otherPlayers) {
-          other.bitmap.x = playerBitmap.x + mapBitmap.scaleX * (other.loc[0] - camera.x);
-          other.bitmap.y = playerBitmap.y + mapBitmap.scaleY * (other.loc[1] - camera.y);
+          other.bitmap.x = mapScale * other.loc[0];
+          other.bitmap.y = mapScale * other.loc[1];
         }
     }
 
@@ -349,26 +360,26 @@ package {
         for (var x:int = message.left; x < message.right; x++) {
           for (var y:int = message.top; y < message.bottom; y++) {
             var tileId:int = binaryPayload[i++];
-            mapBitmapData.setPixel(x - location[0] + mapBitmapData.width/2,
-                                   y - location[1] + mapBitmapData.height/2,
-                                   colorMap[tileId]);
+            mapBitmapData.setPixel(x - message.left, y - message.top, colorMap[tileId]);
           }
         }
-        mapBitmapData.setPixel(0, 0, 0);
-        mapBitmapData.setPixel(mapBitmapData.width-1, 0, 0);
-        mapBitmapData.setPixel(mapBitmapData.width-1, mapBitmapData.height-1, 0);
+
+        // Show character's current location:  (temporary)
+        mapBitmapData.setPixel(location[0] - message.left, location[1] - message.top, 0x99aabb);
+        
         mapBitmapData.unlock();
-        onEnterFrame(null);  // HACK: reposition the bitmap properly
+        mapBitmap.x = mapScale * message.left;
+        mapBitmap.y = mapScale * message.top;
+        Debug.trace(location, message.left, "..", message.right, ", ", message.top, "..", message.bottom);
+
         if (_keyQueue) onKeyDown(_keyQueue, true);
       } else if (message.type == 'player_positions') {
         for each (var other:Object in message.positions) {
             // Make sure we have an entry in otherPlayers
             if (otherPlayers[other.id] == null) {
-              otherPlayers[other.id] = {
-                sprite_id: -1,
-                bitmap: new Bitmap(new BitmapData(playerBitmap.width, playerBitmap.height, true, 0x00000000))
-              };
-              mapParent.addChild(otherPlayers[other.id].bitmap);
+              var bitmap:Bitmap = new Bitmap(new BitmapData(playerBitmap.width, playerBitmap.height, true, 0x00000000));
+              otherPlayers[other.id] = {sprite_id: -1, bitmap: bitmap};
+              mapArea.addChild(otherPlayers[other.id].bitmap);
             }
             // TODO: remove entries for players not sent to us
             
