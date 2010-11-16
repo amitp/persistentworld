@@ -11,6 +11,7 @@ package {
   import flash.text.*;
   import flash.geom.*;
   import com.gskinner.motion.GTween;
+  import com.gskinner.motion.easing.*;
   
   public class gameclient extends Sprite {
     static public var TILES_ON_SCREEN:int = 13;
@@ -29,10 +30,19 @@ package {
     // top of the map area.
     static public var mapScale:Number = 3.0 * 8;
     public var mapArea:Sprite = new Sprite();
+    public var mapSprite:Sprite = new Sprite();
     public var mapParent:Sprite = new Sprite();
 
     public var camera:Object = { x: 0, y: 0, z: 0 };
-
+    public var cameraZoomTween:GTween = new GTween(this, 0.3, {}, {}, Linear.easeNone);
+    public function get cameraZ():Number { return camera.z; }
+    public function set cameraZ(z:Number):void {
+      camera.z = z;
+      var zoom:Number = 10.0 / (10+camera.z);
+      playerSprite.scaleX = playerSprite.scaleY = Math.max(1.0, 1.0/(zoom*zoom));
+      mapSprite.scaleX = mapSprite.scaleY = zoom;
+    }
+                                            
     public var clickToFocusMessage:Sprite = new Sprite();
     
     public var spritesheet:Spritesheet = new oddball_char();
@@ -40,6 +50,8 @@ package {
     public var playerName:String = "guest";
     public var playerStyle:Object = spritesheet.makeStyle();
     public var playerBitmap:Bitmap = new Bitmap(new BitmapData(2*2 + 8*3, 2*2 + 8*3, true, 0x00000000));
+    public var playerSprite:Sprite = new Sprite();
+    
     public var location:Array = [945, 1220];
     public var moving:Boolean = false;
     public var _keyQueue:KeyboardEvent = null;  // next key that we haven't processed yet
@@ -57,7 +69,7 @@ package {
     public function gameclient() {
       stage.scaleMode = 'noScale';
       stage.align = 'TL';
-      stage.frameRate = 30;
+      stage.frameRate = 60;
 
       addChild(new Debug(this)).x = 410;
 
@@ -86,8 +98,17 @@ package {
       
       client.onMessageCallback = handleMessage;
       client.connect();
-      // setupIntroUi();
-      setupGameUi();
+
+      var debugMode:Boolean = false;
+      CONFIG::debugging {
+        debugMode = true;
+      }
+
+      if (debugMode) {
+        setupGameUi();
+      } else {
+        setupIntroUi();
+      }
     }
 
 
@@ -107,6 +128,11 @@ package {
         removeChild(label);
         removeChild(title);
         setupGameUi();
+        cameraZoomTween.onComplete = null;
+        cameraZ = 50;
+        cameraZoomTween.duration = 3.0;
+        cameraZoomTween.ease = Back.easeOut;
+        cameraZoomTween.setValue('cameraZ', 0);
       }
 
       var style:Object = spritesheet.makeStyle();
@@ -176,14 +202,17 @@ package {
       mapBitmap.smoothing = false;
 
       mapArea.addChild(mapBitmap);
-      mapParent.addChild(mapArea);
+      mapSprite.addChild(mapArea);
+      mapSprite.x = 200;
+      mapSprite.y = 200;
+      mapParent.addChild(mapSprite);
       
       playerStyle.saturation = 0.9;
       spritesheet.drawToBitmap(spriteId, playerBitmap.bitmapData, playerStyle);
-      // TODO: why 1.75? calculate this properly:
-      playerBitmap.x = TILES_ON_SCREEN/2*mapScale + 1.75*mapScale;
-      playerBitmap.y = TILES_ON_SCREEN/2*mapScale + 1.75*mapScale;
-      mapParent.addChild(playerBitmap);
+      playerBitmap.x = -playerBitmap.bitmapData.width/2;
+      playerBitmap.y = -playerBitmap.bitmapData.height/2;
+      playerSprite.addChild(playerBitmap);
+      mapArea.addChild(playerSprite);
       
       pingTime.x = 10;
       pingTime.y = 10;
@@ -268,8 +297,10 @@ package {
         if (_keyQueue) onKeyDown(_keyQueue, true);
       }
       if (animationState != null || e == null) {
-        mapArea.x = -mapScale * camera.x + 200;
-        mapArea.y = -mapScale * camera.y + 200;
+        mapArea.x = -mapScale * camera.x;
+        mapArea.y = -mapScale * camera.y;
+        playerSprite.x = mapScale * (camera.x + 0.5);
+        playerSprite.y = mapScale * (camera.y + 0.5);
         moveOtherPlayers();
       }
     }
@@ -306,8 +337,19 @@ package {
 
       // While entering text, other keys don't apply
       if (stage.focus == inputField) return;
-      
-      if (e.keyCode == 39 /* RIGHT */) { newLoc[0] += WALK_STEP; }
+
+      if (e.keyCode == 32 /* Space */) {
+        // HACK: change zoom level -- what's a better way to do this?
+        cameraZoomTween.onComplete = function():void {
+          cameraZoomTween.onComplete = null;
+          cameraZoomTween.ease = Cubic.easeIn;
+          cameraZoomTween.duration = 0.2;
+          cameraZoomTween.setValue('cameraZ', 0);
+        };
+        cameraZoomTween.ease = Cubic.easeOut;
+        cameraZoomTween.duration = 0.2;
+        cameraZoomTween.setValue('cameraZ', 2);
+      } else if (e.keyCode == 39 /* RIGHT */) { newLoc[0] += WALK_STEP; }
       else if (e.keyCode == 37 /* LEFT */) { newLoc[0] -= WALK_STEP; }
       else if (e.keyCode == 38 /* UP */) { newLoc[1] -= WALK_STEP; }
       else if (e.keyCode == 40 /* DOWN */) { newLoc[1] += WALK_STEP; }
