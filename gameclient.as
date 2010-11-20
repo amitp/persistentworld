@@ -19,11 +19,11 @@ package {
     static public var WALK_TIME:Number = 150;
     static public var WALK_STEP:int = 1;
     
-    public var mapBitmapData:BitmapData = new BitmapData(2*TILES_ON_SCREEN + 2*TILE_PADDING,
-                                                         2*TILES_ON_SCREEN + 2*TILE_PADDING,
+    public var mapBitmapData:BitmapData = new BitmapData(4*TILES_ON_SCREEN + 2*TILE_PADDING,
+                                                         4*TILES_ON_SCREEN + 2*TILE_PADDING,
                                                          false, 0x00ccddcc);
     public var mapBitmap:Bitmap;
-    // The map area contains all the tile blocks and other playersn,
+    // The map area contains all the tile blocks and other players,
     // positioned in absolute coordinate space. Moving the camera
     // means moving and zooming the map area within the map
     // parent. You can think of the map parent as being a "window" on
@@ -261,10 +261,10 @@ package {
           type: 'move',
             from: location,
             to: location,
-            left: location[0] - TILES_ON_SCREEN,
-            right: location[0] + TILES_ON_SCREEN,
-            top: location[1] - TILES_ON_SCREEN,
-            bottom: location[1] + TILES_ON_SCREEN
+            left: location[0] - 2*TILES_ON_SCREEN,
+            right: location[0] + 2*TILES_ON_SCREEN,
+            top: location[1] - 2*TILES_ON_SCREEN,
+            bottom: location[1] + 2*TILES_ON_SCREEN
             });
       onEnterFrame(null);
     }
@@ -339,7 +339,7 @@ package {
       if (stage.focus == inputField) return;
 
       if (e.keyCode == 32 /* Space */) {
-        // HACK: change zoom level -- what's a better way to do this?
+        // TODO: check if we're already jumping, and either ignore, or double jump
         cameraZoomTween.onComplete = function():void {
           cameraZoomTween.onComplete = null;
           cameraZoomTween.ease = Cubic.easeIn;
