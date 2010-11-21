@@ -42,6 +42,7 @@ http.createServer(function (request, response) {
         response.writeHead(403, "Honeypot");
         response.write("Your IP has been logged.")
         response.end();
+        sys.log("403 "+JSON.stringify(request.headers))
     } else {
         response.writeHead(404, "Honeypot");
         response.write("Request from " + request.connection.remoteAddress + " has been logged.")
@@ -116,6 +117,10 @@ net.createServer(function (socket) {
         if (message.type != 'pong' && message.type != 'player_positions') {
             log('sending ' + message.type + " / " + jsonMessage.length + " / " + binaryPayload.length + " " + jsonMessage);
         }
+        // Put everything into one string because we don't want to
+        // create unnecessary packets with TCP_NODELAY. TODO: batch up
+        // all messages written during handleMessage and send them all
+        // at once.
         bytes = (int32ToBinaryLittleEndian(jsonMessage.length)
                  + int32ToBinaryLittleEndian(binaryPayload.length)
                  + jsonMessage
@@ -167,11 +172,7 @@ net.createServer(function (socket) {
             for (clientId in clients) {
                 clients[clientId].messages.push(clients[clientId].name+": "+message.message);
             }
-        } else if (message.type == 'map_tiles') {
-            respondWithMapTiles(message.timestamp,
-                                message.left, message.right,
-                                message.top, message.bottom);
-        } else {
+        }} else {
             log('  -- unknown message type');
         }
     }
