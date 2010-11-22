@@ -64,7 +64,7 @@ package {
     public var client:Client = new Client();
     public var pingTime:TextField = new TextField();
     public var inputField:TextField = new TextField();
-    public var outputMessages:TextField = new TextField();
+    public var outputMessages:OutputMessageBox = new OutputMessageBox(400, 100);
     
     public function gameclient() {
       stage.scaleMode = 'noScale';
@@ -236,13 +236,9 @@ package {
 
       outputMessages.x = 10;
       outputMessages.y = 430;
-      outputMessages.width = 398;
-      outputMessages.height = 100;
-      outputMessages.border = true;
-      outputMessages.borderColor = 0x666600;
-      outputMessages.text = "Arrows to move. Enter to chat. Space to jump.";
+      outputMessages.addSystemText("Arrows to move. Enter to chat. Space to jump.");
       addChild(outputMessages);
-
+      
       // Move this to the top
       removeChild(clickToFocusMessage);
       addChild(clickToFocusMessage);
@@ -421,8 +417,9 @@ package {
           }
         moveOtherPlayers();
       } else if (message.type == 'messages') {
-        outputMessages.text = outputMessages.text + "\n" + message.messages.join("\n");
-        outputMessages.scrollV = outputMessages.maxScrollV;
+        for each (var chat:Object in message.messages) {
+          outputMessages.addChat(chat.sprite_id, chat.from, chat.text);
+        }
       } else if (message.type == 'pong') {
         pingTime.text = "ping time: " + (getTimer() - message.timestamp) + "ms";
       }

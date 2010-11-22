@@ -176,7 +176,9 @@ net.createServer(function (socket) {
                                         });
                 }
             }
-            sendMessage({type: 'player_positions', positions: otherPositions});
+            if (otherPositions.length > 0) {
+                sendMessage({type: 'player_positions', positions: otherPositions});
+            }
             if (clients[socket.remotePort].messages.length > 0) {
                 sendMessage({type: 'messages', messages: clients[socket.remotePort].messages});
                 clients[socket.remotePort].messages = [];
@@ -185,7 +187,10 @@ net.createServer(function (socket) {
             // TODO: handle special commands
             // TODO: handle empty messages (after spaces stripped)
             for (clientId in clients) {
-                clients[clientId].messages.push(clients[clientId].name+": "+message.message);
+                clients[clientId].messages.push({
+                    from: clients[socket.remotePort].name,
+                    sprite_id: clients[socket.remotePort].sprite_id,
+                    text: message.message});
             }
         } else {
             log('  -- unknown message type');
