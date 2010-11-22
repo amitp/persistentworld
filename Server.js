@@ -127,6 +127,7 @@ net.createServer(function (socket) {
                  + binaryPayload);
         socket_write(bytes, 'binary');
     }
+
     
     function handleMessage(message, binaryMessage) {
         if (message.type == 'identify') {
@@ -136,11 +137,23 @@ net.createServer(function (socket) {
             // NOTE: we're temporarily using remotePort as the client id
             clients[socket.remotePort].loc = message.to;
 
+            // Include a list of simblocks that the client is now subscribed to
+            // TODO: only send this if the set has changed from last time
+            // TODO: also send add/del messages for items and characters in changed blocks
+            var simblocks = simblocksSurroundingLocation(message.to);
+            
             // TODO: make sure that the move is valid
-            var mapTiles = constructMapTiles(message.left, message.right, message.top, message.bottom);
             sendMessage({
                 type: 'move_ok',
                 loc: clients[socket.remotePort].loc,
+                simblocks: simblocks,
+            });
+        } else if (message.type == 'map_tiles') {
+            var blockRange = simblockBounds(message.simblock_id);
+            var mapTiles = constructMapTiles(blockRange.left, blockRange.right, blockRange.top, blockRange.bottom);
+            sendMessage({
+                type: 'map_tiles',
+                simblock_id: message.simblock_id,
                 left: mapTiles.left,
                 right: mapTiles.right,
                 top: mapTiles.top,
@@ -169,20 +182,47 @@ net.createServer(function (socket) {
                 clients[socket.remotePort].messages = [];
             }
         } else if (message.type == 'message') {
+            // TODO: handle special commands
+            // TODO: handle empty messages (after spaces stripped)
             for (clientId in clients) {
                 clients[clientId].messages.push(clients[clientId].name+": "+message.message);
             }
-        }} else {
+        } else {
             log('  -- unknown message type');
         }
     }
 
+
+    // Simblocks are map blocks that the client "subscribes"
+    // to. Events in the subscribed areas are sent to the client: map
+    // tiles never change (but have to be sent once); items are
+    // created, used, and destroyed, but never move; creatures are
+    // created, changed, moved, and destroyed.
+    var simblockSize = 16;  // TODO: figure out best size here (24?)
+
+    function simblocksSurroundingLocation(location) {
+        var radius = 9;  // Approximate half-size of client viewport
+        var left = Math.floor((location[0] - radius) / simblockSize);
+        var right = Math.ceil((location[0] + radius) / simblockSize);
+        var top = Math.floor((location[1] - radius) / simblockSize);
+        var bottom = Math.ceil((location[1] + radius) / simblockSize);
+        var blocks = [];
+        for (var x = left; x <= right; x++) {
+            for (var y = top; y <= bottom; y++) {
+                blocks.push({blockX: x, blockY: y});
+            }
+        }
+        return blocks;
+    }
+
+    function simblockBounds(simblockLocation) {
+        var left = simblockLocation.blockX * simblockSize;
+        var top = simblockLocation.blockY * simblockSize;
+        return {left: left, top: top, right: left+simblockSize, bottom: top+simblockSize};
+    }
+    
     function constructMapTiles(left, right, top, bottom) {
         // Clip the rectangle to the map and make sure bounds are sane
-        left = Math.floor(left);
-        right = Math.floor(right);
-        top = Math.floor(top);
-        bottom = Math.floor(bottom);
         if (left < 0) left = 0;
         if (right > width) right = width;
         if (top < 0) top = 0;

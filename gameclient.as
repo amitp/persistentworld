@@ -19,16 +19,16 @@ package {
     static public var WALK_TIME:Number = 150;
     static public var WALK_STEP:int = 1;
     
-    public var mapBitmapData:BitmapData = new BitmapData(4*TILES_ON_SCREEN + 2*TILE_PADDING,
-                                                         4*TILES_ON_SCREEN + 2*TILE_PADDING,
-                                                         false, 0x00ccddcc);
-    public var mapBitmap:Bitmap;
     // The map area contains all the tile blocks and other players,
     // positioned in absolute coordinate space. Moving the camera
     // means moving and zooming the map area within the map
     // parent. You can think of the map parent as being a "window" on
-    // top of the map area.
+    // top of the map area. The map area is divided into three layers:
+    // terrainLayer, itemLayer, characterLayer.
     static public var mapScale:Number = 3.0 * 8;
+    public var terrainLayer:Sprite = new Sprite();
+    public var itemLayer:Sprite = new Sprite();
+    public var characterLayer:Sprite = new Sprite();
     public var mapArea:Sprite = new Sprite();
     public var mapSprite:Sprite = new Sprite();
     public var mapParent:Sprite = new Sprite();
@@ -197,11 +197,10 @@ package {
       addChild(mapParent);
       addChild(mapMask);
 
-      mapBitmap = new Bitmap(mapBitmapData);
-      mapBitmap.scaleX = mapBitmap.scaleY = mapScale;
-      mapBitmap.smoothing = false;
-
-      mapArea.addChild(mapBitmap);
+      mapArea.addChild(terrainLayer);
+      mapArea.addChild(itemLayer);
+      mapArea.addChild(characterLayer);
+      
       mapSprite.addChild(mapArea);
       mapSprite.x = 200;
       mapSprite.y = 200;
@@ -212,7 +211,7 @@ package {
       playerBitmap.x = -playerBitmap.bitmapData.width/2;
       playerBitmap.y = -playerBitmap.bitmapData.height/2;
       playerSprite.addChild(playerBitmap);
-      mapArea.addChild(playerSprite);
+      characterLayer.addChild(playerSprite);
       
       pingTime.x = 10;
       pingTime.y = 10;
@@ -241,7 +240,7 @@ package {
       outputMessages.height = 100;
       outputMessages.border = true;
       outputMessages.borderColor = 0x666600;
-      outputMessages.text = "Arrows to move. Enter to chat.";
+      outputMessages.text = "Arrows to move. Enter to chat. Space to jump.";
       addChild(outputMessages);
 
       // Move this to the top
@@ -252,20 +251,8 @@ package {
       
       stage.addEventListener(KeyboardEvent.KEY_DOWN, onKeyDown);
         
-      client.sendMessage({
-          type: 'identify',
-            name: playerName,
-            sprite_id: spriteId
-            });
-      client.sendMessage({
-          type: 'move',
-            from: location,
-            to: location,
-            left: location[0] - 2*TILES_ON_SCREEN,
-            right: location[0] + 2*TILES_ON_SCREEN,
-            top: location[1] - 2*TILES_ON_SCREEN,
-            bottom: location[1] + 2*TILES_ON_SCREEN
-            });
+      client.sendMessage({type: 'identify', name: playerName, sprite_id: spriteId});
+      client.sendMessage({type: 'move', from: location, to: location});
       onEnterFrame(null);
     }
 
@@ -323,10 +310,7 @@ package {
       if (e.keyCode == 13 /* Enter */) {
         if (stage.focus == inputField) {
           // End text entry by sending to server
-          client.sendMessage({
-              type: 'message',
-                message: inputField.text
-                });
+          client.sendMessage({type: 'message', message: inputField.text});
           inputField.text = "";
           stage.focus = null;
         } else {
@@ -359,16 +343,7 @@ package {
         if (!moving && animationState == null) {
           e.updateAfterEvent();
           moving = true;
-          var radius:int = TILE_PADDING + TILES_ON_SCREEN;;
-          client.sendMessage({
-              type: 'move',
-                from: location,
-                to: newLoc,
-                left: newLoc[0] - radius,
-                right: newLoc[0] + radius,
-                top: newLoc[1] - radius,
-                bottom: newLoc[1] + radius
-                });
+          client.sendMessage({type: 'move', from: location, to: newLoc});
           now = getTimer();
           animationState = {
             beginLocation: location,
@@ -384,44 +359,55 @@ package {
       }
     }
 
-    
+
+    private var mapBlocks:Object = {};
     public function handleMessage(message:Object, binaryPayload:ByteArray):void {
       if (message.type == 'move_ok') {
         moving = false;
         location = message.loc;
 
-        // For now, the move_ok message gets the tile data
-        // piggybacked. This is because we assume the bitmap's center
-        // is the current location, so we have to update both the
-        // location and the bitmap at the same time. In the future
-        // we'll cache parts of the map and will request only areas
-        // that need it.
+        // Request map tiles corresponding to our new location. Only
+        // request the map tiles if we don't already have that block,
+        // or if that block is already requested.
+        for each (var simblock_id:Object in message.simblocks) {
+            var simblock_hash:String = /* HACK: */ simblock_id.blockX + ":" + simblock_id.blockY;
+            if (mapBlocks[simblock_hash] == null) {
+              mapBlocks[simblock_hash] = {};  // Pending
+              client.sendMessage({type: 'map_tiles', simblock_id: simblock_id});
+            }
+          }
+
+        // HACK: if a movement was delayed because we were already
+        // moving, trigger the new movement
+        if (_keyQueue) onKeyDown(_keyQueue, true);
+      } else if (message.type == 'map_tiles') {
+        var i:int, tileId:int, x:int, y:int;
         if (colorMap.length == 0) buildColorMap();
-        var i:int = 0;
-        mapBitmapData.lock();
-        for (var x:int = message.left; x < message.right; x++) {
-          for (var y:int = message.top; y < message.bottom; y++) {
-            var tileId:int = binaryPayload[i++];
-            mapBitmapData.setPixel(x - message.left, y - message.top, colorMap[tileId]);
+        i = 0;
+        var bmp:BitmapData = new BitmapData(message.right-message.left, message.bottom-message.top, false);
+        for (x = message.left; x < message.right; x++) {
+          for (y = message.top; y < message.bottom; y++) {
+            tileId = binaryPayload[i++];
+            bmp.setPixel(x - message.left, y - message.top, colorMap[tileId]);
           }
         }
+        bmp.lock();
 
-        // Show character's current location:  (temporary)
-        mapBitmapData.setPixel(location[0] - message.left, location[1] - message.top, 0x99aabb);
+        bitmap = new Bitmap(bmp);
+        bitmap.scaleX = bitmap.scaleY = mapScale;
+        bitmap.x = mapScale * message.left;
+        bitmap.y = mapScale * message.top;
         
-        mapBitmapData.unlock();
-        mapBitmap.x = mapScale * message.left;
-        mapBitmap.y = mapScale * message.top;
-        Debug.trace(location, message.left, "..", message.right, ", ", message.top, "..", message.bottom);
-
-        if (_keyQueue) onKeyDown(_keyQueue, true);
+        simblock_hash = /* HACK: */ message.simblock_id.blockX + ":" + message.simblock_id.blockY;
+        mapBlocks[simblock_hash].bitmap = bitmap;
+        terrainLayer.addChild(bitmap);
       } else if (message.type == 'player_positions') {
         for each (var other:Object in message.positions) {
             // Make sure we have an entry in otherPlayers
             if (otherPlayers[other.id] == null) {
               var bitmap:Bitmap = new Bitmap(new BitmapData(playerBitmap.width, playerBitmap.height, true, 0x00000000));
               otherPlayers[other.id] = {sprite_id: -1, bitmap: bitmap};
-              mapArea.addChild(otherPlayers[other.id].bitmap);
+              characterLayer.addChild(otherPlayers[other.id].bitmap);
             }
             // TODO: remove entries for players not sent to us
             
