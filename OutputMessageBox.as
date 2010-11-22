@@ -4,14 +4,12 @@
 
 package {
   import amitp.*;
+  import flash.display.DisplayObject;
   import flash.display.Sprite;
   import flash.geom.Rectangle;
   import flash.text.engine.*;
 
   public class OutputMessageBox extends Sprite {
-    // Each message has an icon (sprite_id), from, and text.
-    public var entries:Array = [];
-
     // The messages are represented as child Sprites. Each one
     // contains a rendered TextBlock.  We remember where we need to
     // add the next sprite:
@@ -33,9 +31,6 @@ package {
       var font1:FontDescription = new FontDescription(FONT, FontWeight.BOLD);
       var font2:FontDescription = new FontDescription(FONT);
 
-      width = w;
-      height = h;
-      
       systemFormat.fontSize = 11;
       systemFormat.color = 0x0000ff;
       systemFormat.fontDescription = font1;
@@ -55,17 +50,18 @@ package {
       // this sprite. I don't know if this is a Flash bug or if I'm
       // doing something wrong.
       graphics.beginFill(0xeeeeee, 0.1);
-      graphics.drawRect(0, 0, width, height);
+      graphics.drawRect(0, 0, w, h);
       graphics.endFill();
+
+      width = w;
+      height = h;
       
-      scrollRect = new Rectangle(0, 0, width, height);
+      scrollRect = new Rectangle(0, 0, w, h);
     }
 
 
     // Add a text block with plain text from the game system
     public function addSystemText(text:String):void {
-      entries.push({systemText: text});
-
       var textBlock:TextBlock = new TextBlock();
       textBlock.content = new TextElement(text, systemFormat);
       addTextBlock(textBlock);
@@ -73,11 +69,9 @@ package {
 
 
     // Add a text block with chat text from a creature
-    public function addChat(sprite_id:int, from:String, text:String):void {
-      entries.push({sprite_id: sprite_id, from: from, text: text});
-
-      // TODO: add sprite
+    public function addChat(icon:DisplayObject, from:String, text:String):void {
       var v:Vector.<ContentElement> = new Vector.<ContentElement>();
+      if (icon != null) v.push(new GraphicElement(icon, icon.width, icon.height, fromFormat));
       v.push(new TextElement(from, fromFormat),
              new TextElement(" says: ", separatorFormat),
              new TextElement(text, textFormat));
@@ -93,7 +87,7 @@ package {
     // the scroll position if necessary.
     private function addTextBlock(textBlock:TextBlock):void {
       var block:Sprite = new Sprite();
-      
+
       var firstLineExtra:Number = 20;
       var lineLength:Number = width - firstLineExtra - 2*MARGIN;
       var xPosition:Number = MARGIN;

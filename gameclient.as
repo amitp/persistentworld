@@ -49,6 +49,7 @@ package {
     public var spriteId:int = int(Math.random()*255);
     public var playerName:String = "guest";
     public var playerStyle:Object = spritesheet.makeStyle();
+    public var playerIconStyle:Object = spritesheet.makeStyle();
     public var playerBitmap:Bitmap = new Bitmap(new BitmapData(2*2 + 8*3, 2*2 + 8*3, true, 0x00000000));
     public var playerSprite:Sprite = new Sprite();
     
@@ -64,7 +65,7 @@ package {
     public var client:Client = new Client();
     public var pingTime:TextField = new TextField();
     public var inputField:TextField = new TextField();
-    public var outputMessages:OutputMessageBox = new OutputMessageBox(400, 100);
+    public var outputMessages:OutputMessageBox = new OutputMessageBox(400, 200);
     
     public function gameclient() {
       stage.scaleMode = 'noScale';
@@ -212,6 +213,9 @@ package {
       playerBitmap.y = -playerBitmap.bitmapData.height/2;
       playerSprite.addChild(playerBitmap);
       characterLayer.addChild(playerSprite);
+
+      playerIconStyle.scale = 1.5;
+      playerIconStyle.padding = 1;
       
       pingTime.x = 10;
       pingTime.y = 10;
@@ -418,7 +422,9 @@ package {
         moveOtherPlayers();
       } else if (message.type == 'messages') {
         for each (var chat:Object in message.messages) {
-          outputMessages.addChat(chat.sprite_id, chat.from, chat.text);
+            var icon:Bitmap = new Bitmap(new BitmapData(14, 14, true, 0x00000000));
+            spritesheet.drawToBitmap(chat.sprite_id, icon.bitmapData, playerIconStyle);
+            outputMessages.addChat(icon, chat.from, chat.text);
         }
       } else if (message.type == 'pong') {
         pingTime.text = "ping time: " + (getTimer() - message.timestamp) + "ms";
