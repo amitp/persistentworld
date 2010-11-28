@@ -10,6 +10,7 @@ package {
   import flash.utils.*;
   import flash.text.*;
   import flash.geom.*;
+  import flash.net.SharedObject;
   import com.gskinner.motion.GTween;
   import com.gskinner.motion.easing.*;
   
@@ -177,9 +178,19 @@ package {
           if (e.keyCode == 13 && playerNameEntry.text.length == 0) playerNameEntry.text = "Guest"; // HACK: for quicker testing
 
           
-          if (e.keyCode == 13 /* Enter */ && playerNameEntry.text.length > 0) introUiCleanup();
+          if (e.keyCode == 13 /* Enter */ && playerNameEntry.text.length > 0) {
+            so.data.username = playerNameEntry.name;
+            so.data.spriteId = spriteId;
+            so.flush();  // TODO: catch exception in case cookie can't be saved
+            introUiCleanup();
+          }
         });
-            
+
+      // TODO: validate the values we get from the cookie
+      var so:SharedObject = SharedObject.getLocal("username");
+      if (so.data.spriteId != null) spriteId = so.data.spriteId;
+      if (so.data.username != null) playerNameEntry.name = so.data.username;
+
       addChild(playerNameEntry);
       addChild(label);
       addChild(title);
