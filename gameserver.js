@@ -7,33 +7,30 @@ var fs = require('fs');
 require.paths.unshift('.');
 server = require('Server');
 
+// Map handling:
+
 // Build the map tiles by combining data from three *.data files
+var map = {width: 2048, height: 2048};
 function buildMap() {
     var elevation = fs.readFileSync("elevation.data");
     var moisture = fs.readFileSync("moisture.data");
     var overrides = fs.readFileSync("overrides.data");
-    var map = new Buffer(2048*2048);
-    for (var i = 0; i < map.length; i++) {
+    map.tiles = new Buffer(map.width*map.height);
+    for (var i = 0; i < map.tiles.length; i++) {
         var code = overrides[i] >> 4;
         if (code == 1 || code == 5 || code == 6 || code == 7 || code == 8) {
             // water
-            map[i] = 0;
+            map.tiles[i] = 0;
         } else if (code == 9 || code == 10 || code == 11 || code == 12) {
             // road/bridge
-            map[i] = 1;
+            map.tiles[i] = 1;
         } else {
             // combine moisture and elevation
-            map[i] = 2 + Math.floor(elevation[i]/255.0*9) + 10*Math.floor(moisture[i]/255.0*9);
+            map.tiles[i] = 2 + Math.floor(elevation[i]/255.0*9) + 10*Math.floor(moisture[i]/255.0*9);
         }
     }
-    return map;
 }
-
-
-// Map handling
-var width = 2048;
-var height = 2048;
-var map = buildMap();  // width X height tile ids (bytes)
+buildMap();
 
 
 // Simblocks are map blocks that the client "subscribes"
@@ -42,6 +39,23 @@ var map = buildMap();  // width X height tile ids (bytes)
 // created, used, and destroyed, but never move; creatures are
 // created, changed, moved, and destroyed.
 var simblockSize = 16;  // TODO: figure out best size here (24?)
+
+
+function simblockLocationToId(blockX, blockY) {
+    var span = map.width / simblockSize;
+    if (0 <= blockX && blockX < span && 0 <= blockY && blockY < span) {
+        return blockX + blockY * span;
+    } else {
+        return -1;
+    }
+}
+
+
+function simblockIdToLocation(simblockId) {
+    var span = map.width / simblockSize;
+    return {blockX: simblockId % span, blockY: Math.floor(simblockId / span)};
+}
+
 
 function simblocksSurroundingLocation(location) {
     var radius = 9;  // Approximate half-size of client viewport
@@ -52,32 +66,34 @@ function simblocksSurroundingLocation(location) {
     var blocks = [];
     for (var x = left; x <= right; x++) {
         for (var y = top; y <= bottom; y++) {
-            // TODO: block ids should be integers, not objects
-            blocks.push({blockX: x, blockY: y});
+            blocks.push(simblockLocationToId(x, y));
         }
     }
     // TODO: blocks should be sorted by distance from location
     return blocks;
 }
 
-function simblockBounds(simblockLocation) {
-    var left = simblockLocation.blockX * simblockSize;
-    var top = simblockLocation.blockY * simblockSize;
+
+function simblockBounds(simblockId) {
+    var location = simblockIdToLocation(simblockId);
+    var left = location.blockX * simblockSize;
+    var top = location.blockY * simblockSize;
     return {left: left, top: top, right: left+simblockSize, bottom: top+simblockSize};
 }
+
 
 function constructMapTiles(left, right, top, bottom) {
     // Clip the rectangle to the map and make sure bounds are sane
     if (left < 0) left = 0;
-    if (right > width) right = width;
+    if (right > map.width) right = map.width;
     if (top < 0) top = 0;
-    if (bottom > height) bottom = height;
+    if (bottom > map.height) bottom = map.height;
     if (right < left) right = left;
     if (bottom < top) bottom = top;
     
     var tiles = [];
     for (var x = left; x < right; x++) {
-        tiles.push(map.slice(x*height + top, x*height + bottom));
+        tiles.push(map.tiles.slice(x*map.height + top, x*map.height + bottom));
     }
     return {
         left: left,
@@ -93,6 +109,7 @@ function constructMapTiles(left, right, top, bottom) {
 
 // Server state
 var clients = {};  // map from the client.id to the Client object
+var clientDefaultLocation = [945, 1220];
 
 
 // Class to handle a single game client
@@ -101,7 +118,7 @@ function Client(connectionId, log, sendMessage) {
     this.messages = [];
     this.name = '??'
     this.sprite_id = null;
-    this.loc = [945, 1220];
+    this.loc = clientDefaultLocation;
     
     if (clients[this.id]) log('ERROR: client id already in clients map');
     clients[this.id] = this;

@@ -381,7 +381,7 @@ package {
         // request the map tiles if we don't already have that block,
         // or if that block is already requested.
         for each (var simblock_id:Object in message.simblocks) {
-            var simblock_hash:String = /* HACK: */ simblock_id.blockX + ":" + simblock_id.blockY;
+            var simblock_hash:String = simblock_id.toString();
             if (mapBlocks[simblock_hash] == null) {
               mapBlocks[simblock_hash] = {};  // Pending
               client.sendMessage({type: 'map_tiles', simblock_id: simblock_id});
@@ -409,7 +409,7 @@ package {
         bitmap.x = mapScale * message.left;
         bitmap.y = mapScale * message.top;
         
-        simblock_hash = /* HACK: */ message.simblock_id.blockX + ":" + message.simblock_id.blockY;
+        simblock_hash = message.simblock_id.toString();
         mapBlocks[simblock_hash].bitmap = bitmap;
         terrainLayer.addChild(bitmap);
       } else if (message.type == 'player_positions') {
