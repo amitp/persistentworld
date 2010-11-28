@@ -84,13 +84,6 @@ function buildMap() {
 }
 
 
-// Server state
-var clients = {};
-var width = 2048;
-var height = 2048;
-var map = buildMap();  // width X height tile ids (bytes)
-
-
 // Conversion from int to little-endian 32-bit binary and back
 function binaryToInt32LittleEndian(buffer) {
     return buffer.charCodeAt(0) | (buffer.charCodeAt(1) << 8) | (buffer.charCodeAt(2) << 16) | (buffer.charCodeAt(3) << 24);
@@ -101,51 +94,88 @@ function int32ToBinaryLittleEndian(value) {
 }
 
 
-// Second server is plain TCP, for the game communication. It also has
-// to serve the cross-domain policy file.
-net.createServer(function (socket) {
-    var bytesRead = 0;
-    var buffer = "";
-    
-    var lastLogTime = new Date().getTime();
-    function log(msg) {
-        var thisLogTime = new Date().getTime();
-        sys.log("+" + (thisLogTime - lastLogTime) + " socket" + (socket.readyState == 'open'? "" : "."+socket.readyState) + "[" + socket.remoteAddress + ":" + socket.remotePort + "] " + msg);
-        lastLogTime = thisLogTime;
-    }
+//////////////////////////////////////////////////////////////////////
 
-    function socket_write(bytes, type) {
-        if (!socket.write(bytes, type)) {
-            // TODO: figure out why something goes wrong when write queue > 32k
-            log('BUFFER IS FULL ' + socket._writeQueue.length + " " + (socket._writeQueue.length > 0? socket._writeQueue[0].length : 0));
+// Map handling
+var width = 2048;
+var height = 2048;
+var map = buildMap();  // width X height tile ids (bytes)
+
+
+// Simblocks are map blocks that the client "subscribes"
+// to. Events in the subscribed areas are sent to the client: map
+// tiles never change (but have to be sent once); items are
+// created, used, and destroyed, but never move; creatures are
+// created, changed, moved, and destroyed.
+var simblockSize = 16;  // TODO: figure out best size here (24?)
+
+function simblocksSurroundingLocation(location) {
+    var radius = 9;  // Approximate half-size of client viewport
+    var left = Math.floor((location[0] - radius) / simblockSize);
+    var right = Math.ceil((location[0] + radius) / simblockSize);
+    var top = Math.floor((location[1] - radius) / simblockSize);
+    var bottom = Math.ceil((location[1] + radius) / simblockSize);
+    var blocks = [];
+    for (var x = left; x <= right; x++) {
+        for (var y = top; y <= bottom; y++) {
+            // TODO: block ids should be integers, not objects
+            blocks.push({blockX: x, blockY: y});
         }
     }
-    
-    function sendMessage(message, binaryPayload /* optional */) {
-        if (binaryPayload == null) binaryPayload = "";
-        jsonMessage = JSON.stringify(message);
-        if (message.type != 'pong' && message.type != 'player_positions') {
-            log('sending ' + message.type + " / " + jsonMessage.length + " / " + binaryPayload.length + " " + jsonMessage);
-        }
-        // Put everything into one string because we don't want to
-        // create unnecessary packets with TCP_NODELAY. TODO: batch up
-        // all messages written during handleMessage and send them all
-        // at once.
-        bytes = (int32ToBinaryLittleEndian(jsonMessage.length)
-                 + int32ToBinaryLittleEndian(binaryPayload.length)
-                 + jsonMessage
-                 + binaryPayload);
-        socket_write(bytes, 'binary');
-    }
+    // TODO: blocks should be sorted by distance from location
+    return blocks;
+}
 
+function simblockBounds(simblockLocation) {
+    var left = simblockLocation.blockX * simblockSize;
+    var top = simblockLocation.blockY * simblockSize;
+    return {left: left, top: top, right: left+simblockSize, bottom: top+simblockSize};
+}
+
+function constructMapTiles(left, right, top, bottom) {
+    // Clip the rectangle to the map and make sure bounds are sane
+    if (left < 0) left = 0;
+    if (right > width) right = width;
+    if (top < 0) top = 0;
+    if (bottom > height) bottom = height;
+    if (right < left) right = left;
+    if (bottom < top) bottom = top;
     
-    function handleMessage(message, binaryMessage) {
+    var tiles = [];
+    for (var x = left; x < right; x++) {
+        tiles.push(map.slice(x*height + top, x*height + bottom));
+    }
+    return {
+        left: left,
+        right: right,
+        top: top,
+        bottom: bottom,
+        binaryPayload: tiles.join("")
+    };
+}
+
+
+//////////////////////////////////////////////////////////////////////
+
+// Server state
+var clients = {};  // map from the client.id to the Client object
+
+
+// Class to handle a single game client
+function Client(connectionId, log, sendMessage) {
+    this.id = connectionId;
+    this.messages = [];
+    this.name = '??'
+    this.sprite_id = null;
+    this.loc = [945, 1220];
+
+    this.handleMessage = function(message, binaryMessage) {
         if (message.type == 'identify') {
-            clients[socket.remotePort].name = message.name;
-            clients[socket.remotePort].sprite_id = message.sprite_id;
+            this.name = message.name;
+            this.sprite_id = message.sprite_id;
         } else if (message.type == 'move') {
             // NOTE: we're temporarily using remotePort as the client id
-            clients[socket.remotePort].loc = message.to;
+            this.loc = message.to;
 
             // Include a list of simblocks that the client is now subscribed to
             // TODO: only send this if the set has changed from last time
@@ -155,7 +185,7 @@ net.createServer(function (socket) {
             // TODO: make sure that the move is valid
             sendMessage({
                 type: 'move_ok',
-                loc: clients[socket.remotePort].loc,
+                loc: this.loc,
                 simblocks: simblocks,
             });
         } else if (message.type == 'map_tiles') {
@@ -178,7 +208,7 @@ net.createServer(function (socket) {
             // moved.
             var otherPositions = [];
             for (clientId in clients) {
-                if (clientId != socket.remotePort && clients[clientId].name != null) {
+                if (clientId != connectionId && clients[clientId].name != null) {
                     otherPositions.push({id: clientId,
                                          name: clients[clientId].name,
                                          sprite_id: clients[clientId].sprite_id,
@@ -189,82 +219,67 @@ net.createServer(function (socket) {
             if (otherPositions.length > 0) {
                 sendMessage({type: 'player_positions', positions: otherPositions});
             }
-            if (clients[socket.remotePort].messages.length > 0) {
-                sendMessage({type: 'messages', messages: clients[socket.remotePort].messages});
-                clients[socket.remotePort].messages = [];
+            if (this.messages.length > 0) {
+                sendMessage({type: 'messages', messages: this.messages});
+                this.messages = [];
             }
         } else if (message.type == 'message') {
             // TODO: handle special commands
             // TODO: handle empty messages (after spaces stripped)
             for (clientId in clients) {
                 clients[clientId].messages.push({
-                    from: clients[socket.remotePort].name,
-                    sprite_id: clients[socket.remotePort].sprite_id,
+                    from: this.name,
+                    sprite_id: this.sprite_id,
                     text: message.message});
             }
         } else {
             log('  -- unknown message type');
         }
     }
+}
 
 
-    // Simblocks are map blocks that the client "subscribes"
-    // to. Events in the subscribed areas are sent to the client: map
-    // tiles never change (but have to be sent once); items are
-    // created, used, and destroyed, but never move; creatures are
-    // created, changed, moved, and destroyed.
-    var simblockSize = 16;  // TODO: figure out best size here (24?)
 
-    function simblocksSurroundingLocation(location) {
-        var radius = 9;  // Approximate half-size of client viewport
-        var left = Math.floor((location[0] - radius) / simblockSize);
-        var right = Math.ceil((location[0] + radius) / simblockSize);
-        var top = Math.floor((location[1] - radius) / simblockSize);
-        var bottom = Math.ceil((location[1] + radius) / simblockSize);
-        var blocks = [];
-        for (var x = left; x <= right; x++) {
-            for (var y = top; y <= bottom; y++) {
-                blocks.push({blockX: x, blockY: y});
-            }
-        }
-        return blocks;
-    }
-
-    function simblockBounds(simblockLocation) {
-        var left = simblockLocation.blockX * simblockSize;
-        var top = simblockLocation.blockY * simblockSize;
-        return {left: left, top: top, right: left+simblockSize, bottom: top+simblockSize};
-    }
+// Class to handle a network connection to the client
+function NetworkConnection(socket) {
+    var connectionId = socket.remoteAddress + ":" + socket.remotePort;
+    var bytesRead = 0;
+    var buffer = "";
     
-    function constructMapTiles(left, right, top, bottom) {
-        // Clip the rectangle to the map and make sure bounds are sane
-        if (left < 0) left = 0;
-        if (right > width) right = width;
-        if (top < 0) top = 0;
-        if (bottom > height) bottom = height;
-        if (right < left) right = left;
-        if (bottom < top) bottom = top;
-        
-        var tiles = [];
-        for (var x = left; x < right; x++) {
-            tiles.push(map.slice(x*height + top, x*height + bottom));
-        }
-        return {
-            left: left,
-            right: right,
-            top: top,
-            bottom: bottom,
-            binaryPayload: tiles.join("")
-        };
+    var lastLogTime = new Date().getTime();
+    function log(msg) {
+        var thisLogTime = new Date().getTime();
+        sys.log("+" + (thisLogTime - lastLogTime) + " socket" + (socket.readyState == 'open'? "" : "."+socket.readyState) + "[" + socket.remoteAddress + ":" + socket.remotePort + "] " + msg);
+        lastLogTime = thisLogTime;
     }
-    
+
+    function sendMessage(message, binaryPayload /* optional */) {
+        if (binaryPayload == null) binaryPayload = "";
+        jsonMessage = JSON.stringify(message);
+        if (message.type != 'pong' && message.type != 'player_positions') {
+            log('sending ' + message.type + " / " + jsonMessage.length + " / " + binaryPayload.length + " " + jsonMessage);
+        }
+        // Put everything into one string because we don't want to
+        // create unnecessary packets with TCP_NODELAY. TODO: batch up
+        // all messages written during handleMessage and send them all
+        // at once.
+        bytes = (int32ToBinaryLittleEndian(jsonMessage.length)
+                 + int32ToBinaryLittleEndian(binaryPayload.length)
+                 + jsonMessage
+                 + binaryPayload);
+        if (!socket.write(bytes, 'binary')) {
+            log('BUFFER IS FULL ' + socket._writeQueue.length + " " + (socket._writeQueue.length > 0? socket._writeQueue[0].length : 0));
+        }
+    }
+
+
     socket.setEncoding("binary");
     socket.setNoDelay();
     
     socket.addListener("connect", function () {
         log("CONNECT");
-        if (clients[socket.remotePort]) log('ERROR: client id already in clients map');
-        clients[socket.remotePort] = {id: socket.remotePort, messages: []};
+        if (clients[connectionId]) log('ERROR: client id already in clients map');
+        clients[connectionId] = new Client(connectionId, log, sendMessage);
     });
     socket.addListener("error", function (e) {
         log("ERROR on socket: " + e);
@@ -318,7 +333,7 @@ net.createServer(function (socket) {
                     }
                     if (message != null) {
                         if (message.type != 'ping') log('handle message ' + message.type + jsonMessage);
-                        handleMessage(message);
+                        clients[connectionId].handleMessage(message);
                     }
                 } else {
                     // We don't have a full message, so wait
@@ -329,9 +344,13 @@ net.createServer(function (socket) {
     });
     socket.addListener("end", function () {
         log("END");
-        delete clients[socket.remotePort];
+        delete clients[connectionId];
         socket.end();
     });
-}).listen(8001);
+}
 
+
+// Second server is plain TCP, for the game communication. It also has
+// to serve the cross-domain policy file.
+net.createServer(NetworkConnection).listen(8001);
 sys.log('Servers running at http://127.0.0.1:8000/ and tcp:8001');
