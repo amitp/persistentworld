@@ -117,7 +117,7 @@ function Client(connectionId, log, sendMessage) {
     this.id = connectionId;
     this.messages = [];
     this.name = '??'
-    this.sprite_id = null;
+    this.spriteId = null;
     this.loc = clientDefaultLocation;
     
     if (clients[this.id]) log('ERROR: client id already in clients map');
@@ -132,11 +132,10 @@ function Client(connectionId, log, sendMessage) {
     this.handleMessage = function(message, binaryMessage) {
         if (message.type == 'identify') {
             this.name = message.name;
-            this.sprite_id = message.sprite_id;
-            sendChatToAll({from: this.name, sprite_id: this.sprite_id,
+            this.spriteId = message.sprite_id;
+            sendChatToAll({from: this.name, sprite_id: this.spriteId,
                            systemtext: " has connected.", usertext: ""});
         } else if (message.type == 'move') {
-            // NOTE: we're temporarily using remotePort as the client id
             this.loc = message.to;
 
             // Include a list of simblocks that the client is now subscribed to
@@ -180,7 +179,7 @@ function Client(connectionId, log, sendMessage) {
                 if (clientId != this.id && clients[clientId].name != null) {
                     otherPositions.push({id: clientId,
                                          name: clients[clientId].name,
-                                         sprite_id: clients[clientId].sprite_id,
+                                         sprite_id: clients[clientId].spriteId,
                                          loc: clients[clientId].loc
                                         });
                 }
@@ -195,7 +194,7 @@ function Client(connectionId, log, sendMessage) {
         } else if (message.type == 'message') {
             // TODO: handle special commands
             // TODO: handle empty messages (after spaces stripped)
-            sendChatToAll({from: this.name, sprite_id: this.sprite_id,
+            sendChatToAll({from: this.name, sprite_id: this.spriteId,
                            systemtext: " says: ", usertext: message.message});
         } else {
             log('  -- unknown message type');
@@ -203,8 +202,8 @@ function Client(connectionId, log, sendMessage) {
     }
 
     this.handleDisconnect = function() {
-        if (this.sprite_id != null) {
-            sendChatToAll({from: this.name, sprite_id: this.sprite_id,
+        if (this.spriteId != null) {
+            sendChatToAll({from: this.name, sprite_id: this.spriteId,
                            systemtext: " has disconnected.", usertext: ""});
         }
         delete clients[this.id];
