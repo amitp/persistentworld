@@ -239,6 +239,7 @@ package {
       
       pingTime.x = 10;
       pingTime.y = 10;
+      pingTime.width = 400;
       addChild(pingTime);
 
       inputField.x = 10;
@@ -448,7 +449,7 @@ package {
             outputMessages.addChat(icon, chat.from, chat.systemtext, chat.usertext);
         }
       } else if (message.type == 'pong') {
-        pingTime.text = "ping time: " + (getTimer() - message.timestamp) + "ms";
+        pingTime.text = "ping time: " + (getTimer() - message.timestamp) + "ms" + " recv: " + client._bytesPerSecond + " bytes/second";
       }
     }
 

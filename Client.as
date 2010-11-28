@@ -12,7 +12,8 @@ package {
   public class Client {
     public var socket:Socket = new Socket();
     public var buffer:ByteArray = new ByteArray();
-    public var pingTimerDelayWhileActive:Number = 1000/5;
+    public var bytesReceived:int = 0;
+    public var pingTimerDelayWhileActive:Number = 1000/2;
     public var pingTimerDelayWhileInactive:Number = 1000/1;
     public var pingTimer:Timer = new Timer(1000/5, 0);
 
@@ -51,6 +52,7 @@ package {
                                   return;
                                 }
 
+                                bytesReceived += socket.bytesAvailable;
                                 socket.readBytes(buffer, buffer.length, socket.bytesAvailable);
 
                                 while (buffer.bytesAvailable >= 8) {
@@ -87,7 +89,11 @@ package {
                                     }
                                     if (onMessageCallback != null) {
                                       var message:Object = JSON.decode(jsonMessage);
-                                      if (message.type == 'pong') _lastPingTime = getTimer() - message.timestamp;
+                                      if (message.type == 'pong') {
+                                        _lastPingTime = getTimer() - message.timestamp;
+                                      } else {
+                                        // Debug.trace("RECV", binaryMessage.length, jsonMessage);
+                                      }
                                       onMessageCallback(message, binaryMessage);
                                     }
                                     previousPosition = buffer.position;
@@ -173,9 +179,13 @@ package {
     }
 
     private var _lastPingTime:Number = 0.0;
+    private var _lastBytesReceived:int = 0;
+    public var _bytesPerSecond:Number = 0.0;
     public function onTimer(e:TimerEvent):void {
       if (socket.connected) {
         sendMessage({type: 'ping', timestamp: getTimer(), ping_time: (_lastPingTime > 0.0)? _lastPingTime : null});
+        _bytesPerSecond = 1000 * (bytesReceived - _lastBytesReceived) / pingTimer.delay;
+        _lastBytesReceived = bytesReceived;
       }
     }
   }
