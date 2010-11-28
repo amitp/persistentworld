@@ -132,7 +132,7 @@ package {
         setupGameUi();
         cameraZoomTween.onComplete = null;
         cameraZ = 50;
-        cameraZoomTween.duration = 3.0;
+        cameraZoomTween.duration = 5.0;
         cameraZoomTween.ease = Back.easeOut;
         cameraZoomTween.setValue('cameraZ', 0);
       }
@@ -195,6 +195,8 @@ package {
       addChild(label);
       addChild(title);
       stage.focus = playerNameEntry;
+      
+      client.sendMessage({type: 'prefetch_map'});
     }
 
     

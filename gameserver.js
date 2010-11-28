@@ -150,6 +150,13 @@ function Client(connectionId, log, sendMessage) {
                 loc: this.loc,
                 simblocks: simblocks,
             });
+        } else if (message.type == 'prefetch_map') {
+            // For now, just send a move_ok, which will trigger the fetching of map tiles
+            sendMessage({
+                type: 'move_ok',
+                loc: clientDefaultLocation,
+                simblocks: simblocksSurroundingLocation(clientDefaultLocation)
+            });
         } else if (message.type == 'map_tiles') {
             var blockRange = simblockBounds(message.simblock_id);
             var mapTiles = constructMapTiles(blockRange.left, blockRange.right, blockRange.top, blockRange.bottom);
