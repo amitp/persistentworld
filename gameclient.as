@@ -53,6 +53,9 @@ package {
     public var playerIconStyle:Object = spritesheet.makeStyle();
     public var playerBitmap:Bitmap = new Bitmap(new BitmapData(2*2 + 8*3, 2*2 + 8*3, true, 0x00000000));
     public var playerSprite:Sprite = new Sprite();
+
+    // Only present during the login, and null at other times:
+    public var playerNameEntry:TextField = null;
     
     public var location:Array = [945, 1220];
     public var moving:Boolean = false;
@@ -90,6 +93,7 @@ package {
           client.activate();
           tween.duration = 0.15;
           tween.setValue('alpha', 0.0);
+          if (playerNameEntry != null) stage.focus = playerNameEntry;
         });
       stage.addEventListener(Event.DEACTIVATE, function (e:Event):void {
           client.deactivate();
@@ -118,7 +122,14 @@ package {
       var preview:Sprite = new Sprite();
       var title:DisplayObject = Text.createTextLine("Welcome to Nakai's secret volcano island.", 50, 50, {fontSize: 18});
       var label:DisplayObject = Text.createTextLine("Enter your name:", 150, 180, {fontSize: 16});
-      var playerNameEntry:TextField = new TextField();
+
+      playerNameEntry = new TextField();
+      
+      // TODO: validate the values we get from the cookie
+      var so:SharedObject = SharedObject.getLocal("username");
+      if (so.data.spriteId != null) spriteId = so.data.spriteId;
+      if (so.data.username != null) playerNameEntry.text = so.data.username;
+      playerNameEntry.setSelection(0, playerNameEntry.text.length);
 
       function introUiCleanup():void {
         stage.focus = null;
@@ -126,6 +137,7 @@ package {
         // TODO: for proper cleanup, need to remove event listeners
         preview.removeChild(previewBitmap);
         removeChild(playerNameEntry);
+        playerNameEntry = null;
         removeChild(preview);
         removeChild(label);
         removeChild(title);
@@ -179,17 +191,12 @@ package {
 
           
           if (e.keyCode == 13 /* Enter */ && playerNameEntry.text.length > 0) {
-            so.data.username = playerNameEntry.name;
+            so.data.username = playerNameEntry.text;
             so.data.spriteId = spriteId;
             so.flush();  // TODO: catch exception in case cookie can't be saved
             introUiCleanup();
           }
         });
-
-      // TODO: validate the values we get from the cookie
-      var so:SharedObject = SharedObject.getLocal("username");
-      if (so.data.spriteId != null) spriteId = so.data.spriteId;
-      if (so.data.username != null) playerNameEntry.name = so.data.username;
 
       addChild(playerNameEntry);
       addChild(label);
