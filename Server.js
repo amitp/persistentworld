@@ -24,30 +24,40 @@ var crossdomainPolicy = (
 
 // First server is HTTP, for serving the swf (don't think crossdomain needed here)
 http.createServer(function (request, response) {
-    sys.log(request.connection.remoteAddress + " " + request.method + " " + request.url);
+    var log = "??";
     if (request.method == 'GET' && request.url == '/crossdomain.xml') {
-        response.writeHead(200, {'Content-Type': 'text/xml'});
+        log = "200 OK/xml";
+        response.writeHead(200, {
+            'Content-Type': 'text/xml',
+            'Content-Length': crossdomainPolicy.length
+        });
         response.write(crossdomainPolicy);
         response.end();
     } else if (request.method == 'GET' && (request.url == '/world' || request.url == '/debug')) {
-        response.writeHead(200, {'Content-Type': 'application/x-shockwave-flash'});
+        log = "200 OK/swf";
         fs.readFile((request.url == '/debug')? "gameclient-dbg.swf" : "gameclient.swf",
                     'binary', function (err, data) {
-            if (err) throw err;
-            response.write(data, 'binary');
-            response.end();
-        });
+                        if (err) throw err;
+                        response.writeHead(200, {
+                            'Content-Type': 'application/x-shockwave-flash',
+                            'Content-Length': data.length
+                        });
+                        response.write(data, 'binary');
+                        response.end();
+                    });
     } else if (request.method == 'GET' && request.url.substr(0, 5) == 'http:') {
         // People from China are probing to see if server will act as a proxy
+        log = "403 PROXY-HONEYPOT";
         response.writeHead(403, "Honeypot");
-        response.write("Your IP has been logged.")
+        response.write("Request from " + request.connection.remoteAddress + " has been logged.")
         response.end();
-        sys.log("403 "+JSON.stringify(request.headers))
     } else {
+        log = "404 HONEYPOT";
         response.writeHead(404, "Honeypot");
         response.write("Request from " + request.connection.remoteAddress + " has been logged.")
         response.end();
     }
+    sys.log("HTTP " + log + " " + request.connection.remoteAddress + " " + request.method + " " + request.url);
 }).listen(8000);
 
 
