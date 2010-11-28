@@ -3,9 +3,15 @@
 // License: MIT
 
 var fs = require('fs');
+var server = require('./Server');
 
-require.paths.unshift('.');
-server = require('Server');
+
+// Utility functions:
+
+function setDifference(set1, set2) {
+    return set1.filter(function (x) { return set2.indexOf(x) < 0; });
+}
+
 
 // Map handling:
 
@@ -58,6 +64,9 @@ function simblockIdToLocation(simblockId) {
 
 
 function simblocksSurroundingLocation(location) {
+    // TODO: we're currently generating a square but it would be
+    // better for the network (spread map loads out over time) if this
+    // were a circular region.
     var radius = 9;  // Approximate half-size of client viewport
     var left = Math.floor((location[0] - radius) / simblockSize);
     var right = Math.ceil((location[0] + radius) / simblockSize);
@@ -119,6 +128,8 @@ function Client(connectionId, log, sendMessage) {
     this.name = '??'
     this.spriteId = null;
     this.loc = clientDefaultLocation;
+    this.subscribedTo = [];  // list of block ids
+    
     
     if (clients[this.id]) log('ERROR: client id already in clients map');
     clients[this.id] = this;
@@ -128,6 +139,15 @@ function Client(connectionId, log, sendMessage) {
             clients[clientId].messages.push(chatMessage);
         }
     }
+
+    // The client is now subscribed to this block, so send the full contents
+    function insertSubscription(blockId) {
+    }
+
+    // The client no longer subscribes to this block, so remove contents
+    function deleteSubscription(blockId) {
+    }
+
     
     this.handleMessage = function(message, binaryMessage) {
         if (message.type == 'identify') {
@@ -140,15 +160,19 @@ function Client(connectionId, log, sendMessage) {
 
             // Include a list of simblocks that the client is now subscribed to
             // TODO: only send this if the set has changed from last time
-            // TODO: also send add/del messages for items and characters in changed blocks
             var simblocks = simblocksSurroundingLocation(message.to);
+
+            var inserted = setDifference(simblocks, this.subscribedTo);
+            var deleted = setDifference(this.subscribedTo, simblocks);
+            this.subscribedTo = simblocks;
+            inserted.forEach(insertSubscription);
+            deleted.forEach(deleteSubscription);
             
             // TODO: make sure that the move is valid
-            sendMessage({
-                type: 'move_ok',
-                loc: this.loc,
-                simblocks: simblocks,
-            });
+            var reply = {type: 'move_ok', loc: this.loc};
+            if (inserted.length > 0) reply.simblocks_ins = inserted;
+            if (deleted.length > 0) reply.simblocks_del = deleted;
+            sendMessage(reply);
         } else if (message.type == 'prefetch_map') {
             // For now, just send a move_ok, which will trigger the fetching of map tiles
             sendMessage({

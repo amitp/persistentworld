@@ -390,7 +390,7 @@ package {
         // Request map tiles corresponding to our new location. Only
         // request the map tiles if we don't already have that block,
         // or if that block is already requested.
-        for each (var simblock_id:Object in message.simblocks) {
+        for each (var simblock_id:Object in (message.simblocks_ins || [])) {
             var simblock_hash:String = simblock_id.toString();
             if (mapBlocks[simblock_hash] == null) {
               mapBlocks[simblock_hash] = {};  // Pending
