@@ -9,7 +9,7 @@
 // [y bytes] binary message
 
 var fs = require('fs');
-var sys = require('util');
+var util = require('util');
 var net = require('net');
 var http = require('http');
 
@@ -35,6 +35,19 @@ function binaryToInt32LittleEndian(buffer) {
 
 function int32ToBinaryLittleEndian(value) {
     return String.fromCharCode(value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff, (value >> 24) & 0xff);
+}
+
+
+// ANSI colors for the console log
+function colorize(str, color) {
+    var ansi = {bold: 1, red: 31, green: 32, yellow: 33, blue: 34, magenta: 35, cyan: 36};
+    return "\033[" + ansi[color] + "m" + str + "\033[0m";
+}
+
+// Shrink JSON
+function simplifyJson(json) {
+    var pattern = new RegExp("([{,])\"([a-z_]+)\":", 'g');
+    return json.replace(pattern, "$1$2:");
 }
 
 
@@ -75,7 +88,7 @@ function createWebServer(port, swfFilesToServe) {
             response.write("Request from " + request.connection.remoteAddress + " has been logged.")
             response.end();
         }
-        sys.log("HTTP " + log + " " + request.connection.remoteAddress + " " + request.method + " " + request.url);
+        util.log(colorize("HTTP ", 'magenta') + log + " " + request.connection.remoteAddress + " " + request.method + " " + request.url);
     }
     
     http.createServer(handler).listen(port);
@@ -92,18 +105,15 @@ function NetworkConnection(MessageHandler) {
         var bytesRead = 0;
         var buffer = "";
         
-        var lastLogTime = new Date().getTime();
         function log(msg) {
-            var thisLogTime = new Date().getTime();
-            sys.log("+" + (thisLogTime - lastLogTime) + " socket" + (socket.readyState == 'open'? "" : "."+socket.readyState) + "[" + socket.remoteAddress + ":" + socket.remotePort + "] " + msg);
-            lastLogTime = thisLogTime;
+            util.print("[" + socket.remotePort + "]" + (socket.readyState == 'open'? "" : "."+colorize(socket.readyState, 'red')) + " " + msg + "\n");
         }
         
         function sendMessage(message, binaryPayload /* optional */) {
             if (binaryPayload == null) binaryPayload = "";
             jsonMessage = JSON.stringify(message);
             if (message.type != 'pong' && message.type != 'player_positions') {
-                log('sending ' + message.type + " / " + jsonMessage.length + " / " + binaryPayload.length + " " + jsonMessage);
+                log(colorize("send ", 'green') + colorize(message.type, 'bold') + "." + binaryPayload.length + simplifyJson(jsonMessage));
             }
             // Put everything into one string because we don't want to
             // create unnecessary packets with TCP_NODELAY. TODO: batch up
@@ -123,19 +133,19 @@ function NetworkConnection(MessageHandler) {
         socket.setNoDelay();
         
         socket.addListener("connect", function () {
-            log("CONNECT");
+            log(colorize("CONNECT", 'red'));
             messageHandler = new MessageHandler(connectionId, log, sendMessage);
             
         });
         socket.addListener("error", function (e) {
-            log("ERROR on socket: " + e);
+            log(colorize("ERROR", 'red') + " on socket: " + e);
         });
         socket.addListener("timeout", function() {
-            log("TIMEOUT");
+            log(colorize("TIMEOUT", 'red'));
             socket.end();
         });
         socket.addListener("drain", function() {
-            log("DRAIN");
+            log(colorize("DRAIN", 'red'));
         });
         socket.addListener("data", function (data) {
             if (bytesRead == 0 && data == "<policy-file-request/>\0") {
@@ -155,12 +165,12 @@ function NetworkConnection(MessageHandler) {
                     var binaryLength = binaryToInt32LittleEndian(buffer.slice(4, 8));
                     // Sanity check
                     if (!(8 <= jsonLength && jsonLength <= 10000)) {
-                        log("ERROR: jsonLength corrupt? ", jsonLength);
+                        log(colorize("ERROR: ", 'red') +"jsonLength corrupt? ", jsonLength);
                         socket.end();
                         return;
                     }
                     if (!(0 <= binaryLength && binaryLength <= 10000000)) {
-                        log("ERROR: binaryLength corrupt? ", binaryLength);
+                        log(colorize("ERROR: ", 'red') + "binaryLength corrupt? ", binaryLength);
                         socket.end();
                         return;
                     }
@@ -174,11 +184,11 @@ function NetworkConnection(MessageHandler) {
                         try {
                             message = JSON.parse(jsonMessage);
                         } catch (e) {
-                            log('error ' + e.message + ' while parsing: ' + JSON.stringify(jsonMessage));
+                            log(colorize("ERROR ", 'red') + e.message + " while parsing: " + JSON.stringify(jsonMessage));
                             message = null;
                         }
                         if (message != null) {
-                            if (message.type != 'ping') log('handle message ' + message.type + jsonMessage);
+                            if (message.type != 'ping') log(colorize("recv ", 'blue') + colorize(message.type, 'bold') + "." + binaryLength + simplifyJson(jsonMessage));
                             messageHandler.handleMessage(message);
                         }
                     } else {
@@ -189,7 +199,7 @@ function NetworkConnection(MessageHandler) {
             }
         });
         socket.addListener("end", function () {
-            log("END");
+            log(colorize("END", 'red'));
             messageHandler.handleDisconnect();
             socket.end();
         });
@@ -200,6 +210,6 @@ function NetworkConnection(MessageHandler) {
 exports.go = function(ClientHandler, swfFilesToServe) {
     createWebServer(HTTP_PORT, swfFilesToServe);
     net.createServer(NetworkConnection(ClientHandler)).listen(GAME_PORT);
-    sys.log("Servers running at http://localhost:" + HTTP_PORT + "/ and tcp:" + GAME_PORT);
+    util.log("Servers running at http://localhost:" + HTTP_PORT + "/ and tcp:" + GAME_PORT);
 }
 
