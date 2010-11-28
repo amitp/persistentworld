@@ -169,10 +169,18 @@ function Client(connectionId, log, sendMessage) {
     this.sprite_id = null;
     this.loc = [945, 1220];
 
+    function sendChatToAll(chatMessage) {
+        for (var clientId in clients) {
+            clients[clientId].messages.push(chatMessage);
+        }
+    }
+    
     this.handleMessage = function(message, binaryMessage) {
         if (message.type == 'identify') {
             this.name = message.name;
             this.sprite_id = message.sprite_id;
+            sendChatToAll({from: this.name, sprite_id: this.sprite_id,
+                           systemtext: " has connected.", usertext: ""});
         } else if (message.type == 'move') {
             // NOTE: we're temporarily using remotePort as the client id
             this.loc = message.to;
@@ -226,14 +234,17 @@ function Client(connectionId, log, sendMessage) {
         } else if (message.type == 'message') {
             // TODO: handle special commands
             // TODO: handle empty messages (after spaces stripped)
-            for (clientId in clients) {
-                clients[clientId].messages.push({
-                    from: this.name,
-                    sprite_id: this.sprite_id,
-                    text: message.message});
-            }
+            sendChatToAll({from: this.name, sprite_id: this.sprite_id,
+                           systemtext: " says: ", usertext: message.message});
         } else {
             log('  -- unknown message type');
+        }
+    }
+
+    this.handleDisconnect = function() {
+        if (this.sprite_id != null) {
+            sendChatToAll({from: this.name, sprite_id: this.sprite_id,
+                           systemtext: " has disconnected.", usertext: ""});
         }
     }
 }
@@ -344,6 +355,7 @@ function NetworkConnection(socket) {
     });
     socket.addListener("end", function () {
         log("END");
+        clients[connectionId].handleDisconnect();
         delete clients[connectionId];
         socket.end();
     });

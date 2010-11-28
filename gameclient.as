@@ -225,7 +225,7 @@ package {
       playerSprite.addChild(playerBitmap);
       characterLayer.addChild(playerSprite);
 
-      playerIconStyle.scale = 1.5;
+      playerIconStyle.scale = 2.0;
       playerIconStyle.padding = 1;
       
       pingTime.x = 10;
@@ -433,9 +433,10 @@ package {
         moveOtherPlayers();
       } else if (message.type == 'messages') {
         for each (var chat:Object in message.messages) {
-            var icon:Bitmap = new Bitmap(new BitmapData(14, 14, true, 0x00000000));
+            var iconSize:Number = 2*playerIconStyle.padding + 8*playerIconStyle.scale;
+            var icon:Bitmap = new Bitmap(new BitmapData(iconSize, iconSize, true, 0xffff00ff));
             spritesheet.drawToBitmap(chat.sprite_id, icon.bitmapData, playerIconStyle);
-            outputMessages.addChat(icon, chat.from, chat.text);
+            outputMessages.addChat(icon, chat.from, chat.systemtext, chat.usertext);
         }
       } else if (message.type == 'pong') {
         pingTime.text = "ping time: " + (getTimer() - message.timestamp) + "ms";

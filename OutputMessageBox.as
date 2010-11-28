@@ -17,6 +17,7 @@ package {
 
     // General configuration
     static public var MARGIN:Number = 2.0;
+    static public var LINE_SPACING:Number = 8.0;
     static public var FONT:String = "Helvetica,Arial,_sans";
 
     // Text formatting:
@@ -69,12 +70,12 @@ package {
 
 
     // Add a text block with chat text from a creature
-    public function addChat(icon:DisplayObject, from:String, text:String):void {
+    public function addChat(icon:DisplayObject, from:String, systemText:String, userText:String):void {
       var v:Vector.<ContentElement> = new Vector.<ContentElement>();
-      if (icon != null) v.push(new GraphicElement(icon, icon.width, icon.height, fromFormat));
+      if (icon != null) v.push(new GraphicElement(icon, icon.width, icon.height-LINE_SPACING/2, fromFormat));
       v.push(new TextElement(from, fromFormat),
-             new TextElement(" says: ", separatorFormat),
-             new TextElement(text, textFormat));
+             new TextElement(systemText, separatorFormat),
+             new TextElement(userText, textFormat));
       var groupElement:GroupElement = new GroupElement(v);
       var textBlock:TextBlock = new TextBlock();
       textBlock.content = groupElement;
@@ -96,7 +97,7 @@ package {
       while (textLine) {
         block.addChild(textLine);
         textLine.x = xPosition;
-        nextYPosition += textLine.height+8;
+        nextYPosition += textLine.height+LINE_SPACING;
         textLine.y = nextYPosition;
         xPosition = firstLineExtra + MARGIN;
         textLine = textBlock.createTextLine(textLine, lineLength);
@@ -105,7 +106,7 @@ package {
       addChild(block);
       if (nextYPosition > height-8) {
         var rect:Rectangle = scrollRect;
-        rect.y = nextYPosition - height-8;
+        rect.y = nextYPosition - height-LINE_SPACING;
         scrollRect = rect;
         // TODO: remove old children that are completely off screen now
       }
