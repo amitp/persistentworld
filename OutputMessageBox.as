@@ -72,7 +72,7 @@ package {
     // Add a text block with chat text from a creature
     public function addChat(icon:DisplayObject, from:String, systemText:String, userText:String):void {
       var v:Vector.<ContentElement> = new Vector.<ContentElement>();
-      if (icon != null) v.push(new GraphicElement(icon, icon.width, icon.height-LINE_SPACING/2, fromFormat));
+      if (icon != null) v.push(new GraphicElement(icon, icon.width+2, icon.height-LINE_SPACING/2, fromFormat));
       v.push(new TextElement(from, fromFormat),
              new TextElement(systemText, separatorFormat),
              new TextElement(userText, textFormat));
