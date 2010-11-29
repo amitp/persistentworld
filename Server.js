@@ -100,7 +100,7 @@ function createWebServer(port, swfFilesToServe) {
 // network connection to the client.
 function NetworkConnection(MessageHandler) {
     return function (socket) {
-        var messageHandler;
+        var messageHandler = null;
         var connectionId = socket.remoteAddress + ":" + socket.remotePort;
         var bytesRead = 0;
         var buffer = "";
@@ -134,8 +134,6 @@ function NetworkConnection(MessageHandler) {
         
         socket.addListener("connect", function () {
             log(colorize("CONNECT", 'red'));
-            messageHandler = new MessageHandler(connectionId, log, sendMessage);
-            
         });
         socket.addListener("error", function (e) {
             log(colorize("ERROR", 'red') + " on socket: " + e);
@@ -153,6 +151,11 @@ function NetworkConnection(MessageHandler) {
                 socket.write(crossdomainPolicy, 'binary');
                 socket.end();
             } else {
+                if (messageHandler == null) {
+                    // We create this only after we're sure it's not a policy file request connection
+                    messageHandler = new MessageHandler(connectionId, log, sendMessage);
+                }
+                
                 // The protocol sends two lengths first. Each length is 4
                 // bytes, and the two lengths tell us how many more bytes
                 // we have to read.
@@ -200,7 +203,9 @@ function NetworkConnection(MessageHandler) {
         });
         socket.addListener("end", function () {
             log(colorize("END", 'red'));
-            messageHandler.handleDisconnect();
+            if (messageHandler != null) {
+                messageHandler.handleDisconnect();
+            }
             socket.end();
         });
     };
