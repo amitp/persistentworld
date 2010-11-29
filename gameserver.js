@@ -73,8 +73,8 @@ function simblocksSurroundingLocation(location) {
     var top = Math.floor((location[1] - radius) / simblockSize);
     var bottom = Math.ceil((location[1] + radius) / simblockSize);
     var blocks = [];
-    for (var x = left; x <= right; x++) {
-        for (var y = top; y <= bottom; y++) {
+    for (var x = left; x < right; x++) {
+        for (var y = top; y < bottom; y++) {
             blocks.push(simblockLocationToId(x, y));
         }
     }
