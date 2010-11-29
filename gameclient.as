@@ -43,14 +43,15 @@ package {
       playerSprite.scaleX = playerSprite.scaleY = Math.max(1.0, 1.0/(zoom*zoom));
       mapSprite.scaleX = mapSprite.scaleY = zoom;
     }
-                                            
+
     public var clickToFocusMessage:Sprite = new Sprite();
     
-    public var spritesheet:Spritesheet = new oddball_char();
-    public var spriteId:int = int(Math.random()*255);
+    public var char_spritesheet:Spritesheet = new oddball_char();
+    public var tile_spritesheet:Spritesheet = new oddball_tile();
+    public var spriteId:int = int(Math.random()*272);  // 273 sprites in oddball_char
     public var playerName:String = "guest";
-    public var playerStyle:Object = spritesheet.makeStyle();
-    public var playerIconStyle:Object = spritesheet.makeStyle();
+    public var playerStyle:Object = char_spritesheet.makeStyle();
+    public var playerIconStyle:Object = char_spritesheet.makeStyle();
     public var playerBitmap:Bitmap = new Bitmap(new BitmapData(2*2 + 8*3, 2*2 + 8*3, true, 0x00000000));
     public var playerSprite:Sprite = new Sprite();
 
@@ -63,6 +64,8 @@ package {
     
     public var animationState:Object = null;
 
+    // Map objects:
+    public var items:Object = {};  // {loc.toString(): obj}
     public var otherPlayers:Object = {};  // {clientId: {sprite_id: bitmap: loc:}}
     
     public var colorMap:Array = [];
@@ -149,7 +152,7 @@ package {
         cameraZoomTween.setValue('cameraZ', 0);
       }
 
-      var style:Object = spritesheet.makeStyle();
+      var style:Object = char_spritesheet.makeStyle();
       style.scale = 13;
       style.padding = 6;
       style.bevelWidth = 2;
@@ -158,14 +161,14 @@ package {
       style.outlineBlur = 5;
       var previewBitmap:Bitmap = new Bitmap(new BitmapData(2*style.padding + 8*style.scale, 2*style.padding + 8*style.scale, true, 0x000000));
       style.saturation = 0.9;
-      spritesheet.drawToBitmap(spriteId, previewBitmap.bitmapData, style);
+      char_spritesheet.drawToBitmap(spriteId, previewBitmap.bitmapData, style);
       previewBitmap.x = 30;
       previewBitmap.y = 130;
       preview.addChild(previewBitmap);
 
       preview.addEventListener(MouseEvent.CLICK, function (e:MouseEvent):void {
           spriteId = int(Math.random()*255);
-          spritesheet.drawToBitmap(spriteId, previewBitmap.bitmapData, style);
+          char_spritesheet.drawToBitmap(spriteId, previewBitmap.bitmapData, style);
           e.updateAfterEvent();
         });
       addChild(preview);
@@ -221,14 +224,14 @@ package {
       mapArea.addChild(terrainLayer);
       mapArea.addChild(itemLayer);
       mapArea.addChild(characterLayer);
-      
+
       mapSprite.addChild(mapArea);
       mapSprite.x = 200;
       mapSprite.y = 200;
       mapParent.addChild(mapSprite);
       
       playerStyle.saturation = 0.9;
-      spritesheet.drawToBitmap(spriteId, playerBitmap.bitmapData, playerStyle);
+      char_spritesheet.drawToBitmap(spriteId, playerBitmap.bitmapData, playerStyle);
       playerBitmap.x = -playerBitmap.bitmapData.width/2;
       playerBitmap.y = -playerBitmap.bitmapData.height/2;
       playerSprite.addChild(playerBitmap);
@@ -398,6 +401,8 @@ package {
             }
           }
 
+        // TODO: clear map bitmap for blocks in simblocks_del
+        
         // HACK: if a movement was delayed because we were already
         // moving, trigger the new movement
         if (_keyQueue) onKeyDown(_keyQueue, true);
@@ -422,6 +427,21 @@ package {
         simblock_hash = message.simblock_id.toString();
         mapBlocks[simblock_hash].bitmap = bitmap;
         terrainLayer.addChild(bitmap);
+      } else if (message.type == 'item_ins') {
+        bitmap = new Bitmap(new BitmapData(playerBitmap.width, playerBitmap.height, true, 0x00000000));
+        tile_spritesheet.drawToBitmap(message.obj.sprite_id, bitmap.bitmapData, playerStyle);
+        bitmap.x = mapScale * message.obj.loc[0];
+        bitmap.y = mapScale * message.obj.loc[1];
+        itemLayer.addChild(bitmap);
+
+        var loc:String = message.obj.loc.toString();
+        if (items[loc] != null) Debug.trace("ERROR: ins item, already exists at ", loc);
+        items[loc] = {sprite: bitmap, obj: message.obj};
+      } else if (message.type == 'item_del') {
+        loc = message.obj.loc.toString();
+        if (items[loc] == null) Debug.trace("ERROR: del item, none at ", loc);
+        itemLayer.removeChild(items[loc].sprite);
+        delete items[loc];
       } else if (message.type == 'player_positions') {
         for each (var other:Object in message.positions) {
             // Make sure we have an entry in otherPlayers
@@ -434,7 +454,7 @@ package {
             
             // Make sure we've drawn the bitmap
             if  (otherPlayers[other.id].sprite_id != other.sprite_id) {
-              spritesheet.drawToBitmap(other.sprite_id, otherPlayers[other.id].bitmap.bitmapData, playerStyle);
+              char_spritesheet.drawToBitmap(other.sprite_id, otherPlayers[other.id].bitmap.bitmapData, playerStyle);
             }
             // Copy the updated data into our record
             otherPlayers[other.id].sprite_id = other.sprite_id;
@@ -445,7 +465,7 @@ package {
         for each (var chat:Object in message.messages) {
             var iconSize:Number = 2*playerIconStyle.padding + 8*playerIconStyle.scale;
             var icon:Bitmap = new Bitmap(new BitmapData(iconSize, iconSize, true, 0xffff00ff));
-            spritesheet.drawToBitmap(chat.sprite_id, icon.bitmapData, playerIconStyle);
+            char_spritesheet.drawToBitmap(chat.sprite_id, icon.bitmapData, playerIconStyle);
             outputMessages.addChat(icon, chat.from, chat.systemtext, chat.usertext);
         }
       } else if (message.type == 'pong') {

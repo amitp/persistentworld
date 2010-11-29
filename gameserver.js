@@ -3,6 +3,7 @@
 // License: MIT
 
 var fs = require('fs');
+var util = require('util');
 var server = require('./Server');
 
 
@@ -52,6 +53,7 @@ function simblockLocationToId(blockX, blockY) {
     if (0 <= blockX && blockX < span && 0 <= blockY && blockY < span) {
         return blockX + blockY * span;
     } else {
+        util.log("ERROR: simblockLocationToId(" + blockX + "," + blockY + ") span=" + span);
         return -1;
     }
 }
@@ -63,6 +65,11 @@ function simblockIdToLocation(simblockId) {
 }
 
 
+function gridLocationToBlockId(x, y) {
+    return simblockLocationToId(Math.floor(x / simblockSize), Math.floor(y / simblockSize));
+}
+
+        
 function simblocksSurroundingLocation(location) {
     // TODO: we're currently generating a square but it would be
     // better for the network (spread map loads out over time) if this
@@ -120,6 +127,14 @@ function constructMapTiles(left, right, top, bottom) {
 var clients = {};  // map from the client.id to the Client object
 var clientDefaultLocation = [945, 1220];
 
+var items = {};  // map from block id to list of items in that block
+
+
+// For testing: create a few items
+items[gridLocationToBlockId(940, 1215)] = [{sprite_id: 0xce, loc: [940, 1215], name: "tree"}];
+items[gridLocationToBlockId(940, 1217)] = [{sprite_id: 0xce, loc: [940, 1217], name: "tree"}];
+items[gridLocationToBlockId(911, 1222)] = [{sprite_id: 0xb1, loc: [911, 1222], name: "treasure chest"}];
+
 
 // Class to handle a single game client
 function Client(connectionId, log, sendMessage) {
@@ -142,10 +157,16 @@ function Client(connectionId, log, sendMessage) {
 
     // The client is now subscribed to this block, so send the full contents
     function insertSubscription(blockId) {
+        (items[blockId] || []).forEach(function (obj) {
+            sendMessage({type: 'item_ins', obj: obj});
+        });
     }
 
     // The client no longer subscribes to this block, so remove contents
     function deleteSubscription(blockId) {
+        (items[blockId] || []).forEach(function (obj) {
+            sendMessage({type: 'item_del', obj: obj});
+        });
     }
 
     
@@ -156,23 +177,27 @@ function Client(connectionId, log, sendMessage) {
             sendChatToAll({from: this.name, sprite_id: this.spriteId,
                            systemtext: " has connected.", usertext: ""});
         } else if (message.type == 'move') {
+            // TODO: make sure that the move is valid
             this.loc = message.to;
 
-            // Include a list of simblocks that the client is now subscribed to
-            // TODO: only send this if the set has changed from last time
-            var simblocks = simblocksSurroundingLocation(message.to);
-
+            // The list of simblocks that the client should be subscribed to
+            var simblocks = simblocksSurroundingLocation(this.loc);
+            // Compute the difference between the new list and the old list
             var inserted = setDifference(simblocks, this.subscribedTo);
             var deleted = setDifference(this.subscribedTo, simblocks);
+            // Set the new list on the server side
             this.subscribedTo = simblocks;
-            inserted.forEach(insertSubscription);
-            deleted.forEach(deleteSubscription);
-            
-            // TODO: make sure that the move is valid
+
+            // The reply will tell the client where the player is now
             var reply = {type: 'move_ok', loc: this.loc};
+            // Set the new list on the client side
             if (inserted.length > 0) reply.simblocks_ins = inserted;
             if (deleted.length > 0) reply.simblocks_del = deleted;
             sendMessage(reply);
+
+            // Send any additional data related to the change in subscriptions
+            inserted.forEach(insertSubscription);
+            deleted.forEach(deleteSubscription);
         } else if (message.type == 'prefetch_map') {
             // For now, just send a move_ok, which will trigger the fetching of map tiles
             sendMessage({
