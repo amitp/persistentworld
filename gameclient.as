@@ -65,8 +65,8 @@ package {
     public var animationState:Object = null;
 
     // Map objects:
-    public var items:Object = {};  // {loc.toString(): obj}
-    public var otherPlayers:Object = {};  // {clientId: {sprite_id: bitmap: loc:}}
+    public var items:Object = {};  // {loc.toString(): {sprite: obj:}}
+    public var creatures:Object = {};  // {obj id: clientId: {sprite: bitmap: obj:}}
     
     public var colorMap:Array = [];
     public var client:Client = new Client();
@@ -235,7 +235,7 @@ package {
       playerBitmap.x = -playerBitmap.bitmapData.width/2;
       playerBitmap.y = -playerBitmap.bitmapData.height/2;
       playerSprite.addChild(playerBitmap);
-      characterLayer.addChild(playerSprite);
+      mapArea.addChild(playerSprite);
 
       playerIconStyle.scale = 2.0;
       playerIconStyle.padding = 1;
@@ -312,20 +312,10 @@ package {
         mapArea.y = -mapScale * camera.y;
         playerSprite.x = mapScale * (camera.x + 0.5);
         playerSprite.y = mapScale * (camera.y + 0.5);
-        moveOtherPlayers();
       }
     }
 
 
-    // Make sure all other player sprites are in the right place relative to the map
-    public function moveOtherPlayers():void {
-      for each (var other:Object in otherPlayers) {
-          other.bitmap.x = mapScale * other.loc[0];
-          other.bitmap.y = mapScale * other.loc[1];
-        }
-    }
-
-    
     public function onKeyDown(e:KeyboardEvent, replay:Boolean = false):void {
       var now:Number;
       if (!replay) Debug.trace("KEY DOWN", e.keyCode, stage.focus == null? "/stage":"/input");
@@ -386,6 +376,8 @@ package {
 
     private var mapBlocks:Object = {};
     public function handleMessage(message:Object, binaryPayload:ByteArray):void {
+      var bitmap:Bitmap;
+      
       if (message.type == 'move_ok') {
         moving = false;
         location = message.loc;
@@ -430,8 +422,8 @@ package {
       } else if (message.type == 'item_ins') {
         bitmap = new Bitmap(new BitmapData(playerBitmap.width, playerBitmap.height, true, 0x00000000));
         tile_spritesheet.drawToBitmap(message.obj.sprite_id, bitmap.bitmapData, playerStyle);
-        bitmap.x = mapScale * message.obj.loc[0];
-        bitmap.y = mapScale * message.obj.loc[1];
+        bitmap.x = mapScale * message.obj.loc[0] - playerStyle.padding;
+        bitmap.y = mapScale * message.obj.loc[1] - playerStyle.padding;
         itemLayer.addChild(bitmap);
 
         var loc:String = message.obj.loc.toString();
@@ -442,25 +434,26 @@ package {
         if (items[loc] == null) Debug.trace("ERROR: del item, none at ", loc);
         itemLayer.removeChild(items[loc].sprite);
         delete items[loc];
-      } else if (message.type == 'player_positions') {
-        for each (var other:Object in message.positions) {
-            // Make sure we have an entry in otherPlayers
-            if (otherPlayers[other.id] == null) {
-              var bitmap:Bitmap = new Bitmap(new BitmapData(playerBitmap.width, playerBitmap.height, true, 0x00000000));
-              otherPlayers[other.id] = {sprite_id: -1, bitmap: bitmap};
-              characterLayer.addChild(otherPlayers[other.id].bitmap);
-            }
-            // TODO: remove entries for players not sent to us
-            
-            // Make sure we've drawn the bitmap
-            if  (otherPlayers[other.id].sprite_id != other.sprite_id) {
-              char_spritesheet.drawToBitmap(other.sprite_id, otherPlayers[other.id].bitmap.bitmapData, playerStyle);
-            }
-            // Copy the updated data into our record
-            otherPlayers[other.id].sprite_id = other.sprite_id;
-            otherPlayers[other.id].loc = other.loc;
-          }
-        moveOtherPlayers();
+      } else if (message.type == 'creature_ins') {
+        // HACK: until we separate server's player representation from connection
+        message.obj.sprite_id = message.obj.sprite_id || message.obj.spriteId;
+        
+        bitmap = new Bitmap(new BitmapData(playerBitmap.width, playerBitmap.height, true, 0x00000000));
+        char_spritesheet.drawToBitmap(message.obj.sprite_id, bitmap.bitmapData, playerStyle);
+        bitmap.x = mapScale * message.obj.loc[0] - playerStyle.padding;
+        bitmap.y = mapScale * message.obj.loc[1] - playerStyle.padding;
+        characterLayer.addChild(bitmap);
+        if (creatures[message.obj.id] != null) Debug.trace("ERROR: ins creature, already exists at ", message.obj.id);
+        creatures[message.obj.id] = {sprite: bitmap, obj: message.obj};
+      } else if (message.type == 'creature_del') {
+        if (creatures[message.obj.id] == null) Debug.trace("ERROR: del creature, none at ", message.obj.id);
+        characterLayer.removeChild(creatures[message.obj.id].sprite);
+        delete creatures[message.obj.id];
+      } else if (message.type == 'creature_move') {
+        if (creatures[message.obj.id] == null) Debug.trace("ERROR: move creature, none at ", message.obj.id);
+        bitmap = creatures[message.obj.id].sprite;
+        bitmap.x = mapScale * message.obj.loc[0] - playerStyle.padding;
+        bitmap.y = mapScale * message.obj.loc[1] - playerStyle.padding;
       } else if (message.type == 'messages') {
         for each (var chat:Object in message.messages) {
             var iconSize:Number = 2*playerIconStyle.padding + 8*playerIconStyle.scale;

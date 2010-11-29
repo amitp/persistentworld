@@ -127,7 +127,12 @@ function constructMapTiles(left, right, top, bottom) {
 var clients = {};  // map from the client.id to the Client object
 var clientDefaultLocation = [945, 1220];
 
+// TODO: build event manager
+var eventId = 1;  // each client tracks last eventId seen
+var events = {};  // map from block id to list of events (ins, del, move)
+
 var items = {};  // map from block id to list of items in that block
+var creatures = {};  // map from block id to list of creatures in that block
 
 
 // For testing: create a few items
@@ -136,14 +141,55 @@ items[gridLocationToBlockId(940, 1217)] = [{sprite_id: 0xce, loc: [940, 1217], n
 items[gridLocationToBlockId(911, 1222)] = [{sprite_id: 0xb1, loc: [911, 1222], name: "treasure chest"}];
 
 
+// Move a creature/player, and update the creatures mapping too. The
+// original location or the target location can be null for creature birth/death.
+function moveCreature(creature, to) {
+    var i;
+    var from = creature.loc;
+    var fromBlock = from && gridLocationToBlockId(from[0], from[1]);
+    var toBlock = to && gridLocationToBlockId(to[0], to[1]);
+
+    if (fromBlock != toBlock) {
+        // Remove this creature from the old block
+        if (fromBlock != null) {
+            i = creatures[fromBlock].indexOf(creature);
+            if (i < 0) log("ERROR: creature does not exist in creatures map");
+            creatures[fromBlock].splice(i, 1);
+            if (!events[fromBlock]) events[fromBlock] = [];
+            events[fromBlock].push({id: eventId, type: 'creature_del', obj: creature});
+            eventId++;
+        }
+        // Add this creature to the new block
+        if (toBlock != null) {
+            if (!creatures[toBlock]) creatures[toBlock] = [];
+            creatures[toBlock].push(creature);
+            if (!events[toBlock]) events[toBlock] = [];
+            events[toBlock].push({id: eventId, type: 'creature_ins', obj: creature});
+            eventId++;
+        }
+    } else {
+        events[toBlock].push({id: eventId, type: 'creature_move', obj: creature});
+        eventId++;
+    }
+
+    creature.loc = to;
+}
+
+
+// TODO: the event queues in each block will keep getting longer;
+// prune them by removing events older than the MIN of the
+// eventIdPointer of all clients.
+
+
 // Class to handle a single game client
 function Client(connectionId, log, sendMessage) {
     this.id = connectionId;
     this.messages = [];
     this.name = '??'
     this.spriteId = null;
-    this.loc = clientDefaultLocation;
+    this.loc = null;
     this.subscribedTo = [];  // list of block ids
+    this.eventIdPointer = eventId;  // this event and newer remain to be processed
     
     
     if (clients[this.id]) log('ERROR: client id already in clients map');
@@ -160,6 +206,13 @@ function Client(connectionId, log, sendMessage) {
         (items[blockId] || []).forEach(function (obj) {
             sendMessage({type: 'item_ins', obj: obj});
         });
+        (creatures[blockId] || []).forEach(function (obj) {
+            // TODO: we currently mix up the player's character object
+            // and the connection object, so we're sending extra
+            // fields here like messages, eventIdPointer,
+            // etc. Separate the objects.
+            sendMessage({type: 'creature_ins', obj: obj});
+        });
     }
 
     // The client no longer subscribes to this block, so remove contents
@@ -167,19 +220,66 @@ function Client(connectionId, log, sendMessage) {
         (items[blockId] || []).forEach(function (obj) {
             sendMessage({type: 'item_del', obj: obj});
         });
+        (creatures[blockId] || []).forEach(function (obj) {
+            sendMessage({type: 'creature_del', obj: {id: obj.id}});
+        });
     }
 
+    // Send all pending events from sim blocks
+    this.sendAllEvents = function() {
+        // Send back events in the subscribed blocks:
+        var eventsNewerThan = this.eventIdPointer;
+        var eventsToSend = [];
+        this.subscribedTo.forEach(function (blockId) {
+            (events[blockId] || []).forEach(function (event) {
+                if (event.id >= eventsNewerThan) {
+                    eventsToSend.push(event);
+                }
+            });
+        });
+        
+        // Sort the events by id. That way a del followed by an
+        // ins in another block will be handled properly by the
+        // client.
+        eventsToSend.sort(function (a, b) { return a.id - b.id; });
+        
+        // Send an event per message:
+        eventsToSend.forEach(function (event) {
+            if (event.type == 'creature_ins') {
+                sendMessage({type: 'creature_ins', obj: event.obj});
+            } else if (event.type == 'creature_del') {
+                sendMessage({type: 'creature_del', obj: {id: event.obj.id}});
+            } else if (event.type == 'creature_move') {
+                sendMessage({type: 'creature_move', obj: {id: event.obj.id, loc: event.obj.loc}});
+            }
+        });
+        
+        // Reset the pointer to indicate that we're current
+        this.eventIdPointer = eventId;
+    }
     
+
     this.handleMessage = function(message, binaryMessage) {
         if (message.type == 'identify') {
             this.name = message.name;
             this.spriteId = message.sprite_id;
+            moveCreature(this, clientDefaultLocation);
             sendChatToAll({from: this.name, sprite_id: this.spriteId,
                            systemtext: " has connected.", usertext: ""});
         } else if (message.type == 'move') {
             // TODO: make sure that the move is valid
-            this.loc = message.to;
+            moveCreature(this, message.to);
 
+            // NOTE: we must flush all events before subscribing to
+            // new blocks, or we'll end up sending things twice. For
+            // example if a creature was created in a block and then
+            // we subscribe to the block, we don't want to first send
+            // the creature at subscription, and then send the
+            // creature again that was in the event log. Similar
+            // problems exist for unsubscriptions.  TODO: investigate
+            // per-block event ids.
+            this.sendAllEvents();
+            
             // The list of simblocks that the client should be subscribed to
             var simblocks = simblocksSurroundingLocation(this.loc);
             // Compute the difference between the new list and the old list
@@ -195,7 +295,7 @@ function Client(connectionId, log, sendMessage) {
             if (deleted.length > 0) reply.simblocks_del = deleted;
             sendMessage(reply);
 
-            // Send any additional data related to the change in subscriptions
+            // Send any additional data related to the change in subscriptions.
             inserted.forEach(insertSubscription);
             deleted.forEach(deleteSubscription);
         } else if (message.type == 'prefetch_map') {
@@ -217,29 +317,16 @@ function Client(connectionId, log, sendMessage) {
                 bottom: mapTiles.bottom,
             }, mapTiles.binaryPayload);
         } else if (message.type == 'ping') {
+            // Send back all events that have occurred since the last ping
             sendMessage({type: 'pong', timestamp: message.timestamp});
 
-            // For now, send back all other client positions. In the
-            // future, set up a map structure that has a last-changed
-            // time per tile, and only send back things that have
-            // moved.
-            var otherPositions = [];
-            for (clientId in clients) {
-                if (clientId != this.id && clients[clientId].name != null) {
-                    otherPositions.push({id: clientId,
-                                         name: clients[clientId].name,
-                                         sprite_id: clients[clientId].spriteId,
-                                         loc: clients[clientId].loc
-                                        });
-                }
-            }
-            if (otherPositions.length > 0) {
-                sendMessage({type: 'player_positions', positions: otherPositions});
-            }
+            // Send back message events:
             if (this.messages.length > 0) {
                 sendMessage({type: 'messages', messages: this.messages});
                 this.messages = [];
             }
+
+            this.sendAllEvents();
         } else if (message.type == 'message') {
             // TODO: handle special commands
             // TODO: handle empty messages (after spaces stripped)
@@ -255,6 +342,7 @@ function Client(connectionId, log, sendMessage) {
             sendChatToAll({from: this.name, sprite_id: this.spriteId,
                            systemtext: " has disconnected.", usertext: ""});
         }
+        moveCreature(this, null);
         delete clients[this.id];
     }
 }
