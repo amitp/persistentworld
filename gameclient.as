@@ -104,10 +104,15 @@ package {
           tween.duration = 1.5;
           tween.setValue('alpha', 1.0);
         });
-      
-      client.onMessageCallback = handleMessage;
-      client.connect();
 
+      var timer:Timer = new Timer(50, 1);
+      timer.addEventListener(TimerEvent.TIMER,
+                             function (e:TimerEvent):void {
+                               client.onMessageCallback = handleMessage;
+                               client.connect();
+                             });
+      timer.start();
+      
       var debugMode:Boolean = false;
       CONFIG::debugging {
         debugMode = true;
