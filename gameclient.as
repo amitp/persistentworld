@@ -67,7 +67,8 @@ package {
     // Map objects:
     public var items:Object = {};  // {loc.toString(): {sprite: obj:}}
     public var creatures:Object = {};  // {obj id: clientId: {sprite: bitmap: obj:}}
-    
+    public var myCreatureId:String = "";
+
     public var colorMap:Array = [];
     public var client:Client = new Client();
     public var pingTime:TextField = new TextField();
@@ -280,7 +281,7 @@ package {
       
       stage.addEventListener(KeyboardEvent.KEY_DOWN, onKeyDown);
         
-      client.sendMessage({type: 'identify', name: playerName, sprite_id: spriteId});
+      client.sendMessage({type: 'client_identify', name: playerName, sprite_id: spriteId});
       client.sendMessage({type: 'move', from: location, to: location});
       onEnterFrame(null);
     }
@@ -382,8 +383,10 @@ package {
     private var mapBlocks:Object = {};
     public function handleMessage(message:Object, binaryPayload:ByteArray):void {
       var bitmap:Bitmap;
-      
-      if (message.type == 'move_ok') {
+
+      if (message.type == 'server_identify') {
+        myCreatureId = message.id;
+      } else if (message.type == 'move_ok') {
         moving = false;
         location = message.loc;
 
@@ -442,12 +445,13 @@ package {
       } else if (message.type == 'creature_ins') {
         // HACK: until we separate server's player representation from connection
         message.obj.sprite_id = message.obj.sprite_id || message.obj.spriteId;
-        
+
         bitmap = new Bitmap(new BitmapData(playerBitmap.width, playerBitmap.height, true, 0x00000000));
         char_spritesheet.drawToBitmap(message.obj.sprite_id, bitmap.bitmapData, playerStyle);
         bitmap.x = mapScale * message.obj.loc[0] - playerStyle.padding;
         bitmap.y = mapScale * message.obj.loc[1] - playerStyle.padding;
         characterLayer.addChild(bitmap);
+        if (message.obj.id == myCreatureId) bitmap.visible = false;  // it's me!
         if (creatures[message.obj.id] != null) Debug.trace("ERROR: ins creature, already exists at ", message.obj.id);
         creatures[message.obj.id] = {sprite: bitmap, obj: message.obj};
       } else if (message.type == 'creature_del') {

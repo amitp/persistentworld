@@ -56,7 +56,7 @@ function simblockLocationToId(blockX, blockY) {
         return blockX + blockY * span;
     } else {
         util.log("ERROR: simblockLocationToId(" + blockX + "," + blockY + ") span=" + span);
-        return -1;
+        return null;
     }
 }
 
@@ -185,18 +185,17 @@ function moveCreature(creature, to) {
 
 // Class to handle a single game client
 function Client(connectionId, log, sendMessage) {
-    this.id = connectionId;
+    this.creature = {id: connectionId, name: '??', sprite_id: null, loc: null};
     this.messages = [];
-    this.name = '??'
-    this.spriteId = null;
-    this.loc = null;
     this.subscribedTo = [];  // list of block ids
     this.eventIdPointer = eventId;  // this event and newer remain to be processed
     
-    
-    if (clients[this.id]) log('ERROR: client id already in clients map');
-    clients[this.id] = this;
+    if (clients[connectionId]) log('ERROR: client id already in clients map');
+    clients[connectionId] = this;
 
+    // Tell the client which of the creature ids is itself
+    sendMessage({type: 'server_identify', id: connectionId});
+    
     function sendChatToAll(chatMessage) {
         for (var clientId in clients) {
             clients[clientId].messages.push(chatMessage);
@@ -209,10 +208,6 @@ function Client(connectionId, log, sendMessage) {
             sendMessage({type: 'item_ins', obj: obj});
         });
         (creatures[blockId] || []).forEach(function (obj) {
-            // TODO: we currently mix up the player's character object
-            // and the connection object, so we're sending extra
-            // fields here like messages, eventIdPointer,
-            // etc. Separate the objects.
             sendMessage({type: 'creature_ins', obj: obj});
         });
     }
@@ -262,15 +257,15 @@ function Client(connectionId, log, sendMessage) {
     
 
     this.handleMessage = function(message, binaryMessage) {
-        if (message.type == 'identify') {
-            this.name = message.name;
-            this.spriteId = message.sprite_id;
-            moveCreature(this, clientDefaultLocation);
-            sendChatToAll({from: this.name, sprite_id: this.spriteId,
+        if (message.type == 'client_identify') {
+            this.creature.name = message.name;
+            this.creature.sprite_id = message.sprite_id;
+            moveCreature(this.creature, clientDefaultLocation);
+            sendChatToAll({from: this.creature.name, sprite_id: this.creature.sprite_id,
                            systemtext: " has connected.", usertext: ""});
         } else if (message.type == 'move') {
             // TODO: make sure that the move is valid
-            moveCreature(this, message.to);
+            moveCreature(this.creature, message.to);
 
             // NOTE: we must flush all events before subscribing to
             // new blocks, or we'll end up sending things twice. For
@@ -283,7 +278,7 @@ function Client(connectionId, log, sendMessage) {
             this.sendAllEvents();
             
             // The list of simblocks that the client should be subscribed to
-            var simblocks = simblocksSurroundingLocation(this.loc);
+            var simblocks = simblocksSurroundingLocation(this.creature.loc);
             // Compute the difference between the new list and the old list
             var inserted = setDifference(simblocks, this.subscribedTo);
             var deleted = setDifference(this.subscribedTo, simblocks);
@@ -291,7 +286,7 @@ function Client(connectionId, log, sendMessage) {
             this.subscribedTo = simblocks;
 
             // The reply will tell the client where the player is now
-            var reply = {type: 'move_ok', loc: this.loc};
+            var reply = {type: 'move_ok', loc: this.creature.loc};
             // Set the new list on the client side
             if (inserted.length > 0) reply.simblocks_ins = inserted;
             if (deleted.length > 0) reply.simblocks_del = deleted;
@@ -332,7 +327,7 @@ function Client(connectionId, log, sendMessage) {
         } else if (message.type == 'message') {
             // TODO: handle special commands
             // TODO: handle empty messages (after spaces stripped)
-            sendChatToAll({from: this.name, sprite_id: this.spriteId,
+            sendChatToAll({from: this.creature.name, sprite_id: this.creature.sprite_id,
                            systemtext: " says: ", usertext: message.message});
         } else {
             log('  -- unknown message type');
@@ -340,12 +335,12 @@ function Client(connectionId, log, sendMessage) {
     }
 
     this.handleDisconnect = function() {
-        if (this.spriteId != null) {
-            sendChatToAll({from: this.name, sprite_id: this.spriteId,
+        if (this.creature.sprite_id != null) {
+            sendChatToAll({from: this.creature.name, sprite_id: this.creature.sprite_id,
                            systemtext: " has disconnected.", usertext: ""});
         }
-        moveCreature(this, null);
-        delete clients[this.id];
+        moveCreature(this.creature, null);
+        delete clients[connectionId];
     }
 }
 
