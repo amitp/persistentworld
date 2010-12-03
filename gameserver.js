@@ -2,9 +2,11 @@
 // amitp@cs.stanford.edu
 // License: MIT
 
+require.paths.unshift('/Users/amitp/Projects/src/underscore')
 var fs = require('fs');
 var util = require('util');
 var server = require('./Server');
+var _ = require('underscore');
 
 
 // Utility functions:
