@@ -149,9 +149,20 @@ setInterval(function () {
     var angle = Math.floor(4*Math.random());
     var dir = [Math.round(Math.cos(0.25*angle*2*Math.PI)), Math.round(Math.sin(0.25*angle*2*Math.PI))];
     var newLoc = [nakai.loc[0] + dir[0], nakai.loc[1] + dir[1]];
-    moveCreature(nakai, newLoc);
-}, 200);
-    
+    if (!objectAtLocation(newLoc)) {
+        moveCreature(nakai, newLoc);
+    }
+}, 1000);
+
+
+// Check if any item or creature is at this location, and return its name, or null if none
+function objectAtLocation(loc) {
+    function test(obj) { return obj.loc[0] == loc[0] && obj.loc[1] == loc[1]; }
+    var blockId = gridLocationToBlockId(loc[0], loc[1]);
+    return _.detect(items[blockId] || [], test) || _.detect(creatures[blockId] || [], test) || null;
+}
+
+            
 // Move a creature/player, and update the creatures mapping too. The
 // original location or the target location can be null for creature birth/death.
 function moveCreature(creature, to) {
@@ -273,8 +284,14 @@ function Client(connectionId, log, sendMessage) {
             sendChatToAll({from: this.creature.name, sprite_id: this.creature.sprite_id,
                            systemtext: " has connected.", usertext: ""});
         } else if (message.type == 'move') {
-            // TODO: make sure that the move is valid
-            moveCreature(this.creature, message.to);
+            var objAtDestination = objectAtLocation(message.to);
+            if (objAtDestination && objAtDestination != this.creature) {
+                // We're not going to allow this move
+                this.messages.push({from: this.creature.name, sprite_id: this.creature.sprite_id,
+                                    systemtext: " blocked by ", usertext: objAtDestination.name});
+            } else {
+                moveCreature(this.creature, message.to);
+            }
 
             // NOTE: we must flush all events before subscribing to
             // new blocks, or we'll end up sending things twice. For

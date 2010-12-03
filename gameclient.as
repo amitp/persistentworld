@@ -17,7 +17,7 @@ package {
   public class gameclient extends Sprite {
     static public var TILES_ON_SCREEN:int = 13;
     static public var TILE_PADDING:int = 3;
-    static public var WALK_TIME:Number = 150;
+    static public var WALK_TIME:Number = 200;
     static public var WALK_STEP:int = 1;
     
     // The map area contains all the tile blocks and other players,
@@ -292,21 +292,24 @@ package {
       var f:Number;
 
       if (animationState) {
-        if (time < animationState.endTime) {
-          f = (time - animationState.beginTime) / (animationState.endTime - animationState.beginTime);
-        } else {
-          f = 1.0;
-        }
-        camera.x = (1-f) * animationState.beginLocation[0] + f * animationState.endLocation[0];
-        camera.y = (1-f) * animationState.beginLocation[1] + f * animationState.endLocation[1];
-
-        if (time >= animationState.endTime) {
-          if (animationState.endLocation[0] == location[0] && animationState.endLocation[1] == location[1]) {
-            animationState = null;
-            e = null;  // hack to make sure we still set x,y
+        if (animationState.endLocation == null) {
+          if (time < animationState.middleTime) {
+            f = (time - animationState.beginTime) / (animationState.middleTime - animationState.beginTime);
+            camera.x = (1-f) * animationState.beginLocation[0] + f * animationState.middleLocation[0];
+            camera.y = (1-f) * animationState.beginLocation[1] + f * animationState.middleLocation[1];
           } else {
-            Debug.trace("delaying animation removal ", animationState.endLocation, location);
+            // Eek! We haven't received the response from the server
+            // yet. We'll just have to wait.
           }
+        } else if (time < animationState.endTime) {
+          f = (time - animationState.beginTime) / (animationState.endTime - animationState.beginTime);
+          camera.x = (1-f) * animationState.beginLocation[0] + f * animationState.endLocation[0];
+          camera.y = (1-f) * animationState.beginLocation[1] + f * animationState.endLocation[1];
+        } else {
+          camera.x = animationState.endLocation[0];
+          camera.y = animationState.endLocation[1];
+          animationState = null;
+          e = null;  // hack to make sure we still set x,y
         }
       } else {
         camera.x = location[0];
@@ -367,8 +370,10 @@ package {
           now = getTimer();
           animationState = {
             beginLocation: location,
-            endLocation: newLoc,
+            middleLocation: [0.9*newLoc[0]+0.1*location[0], 0.9*newLoc[1]+0.1*location[1]],
+            endLocation: null,  // null until we get the ok from the server
             beginTime: now,
+            middleTime: now + 0.9*WALK_TIME,
             endTime: now + WALK_TIME
           };
         } else {
@@ -388,6 +393,13 @@ package {
         myCreatureId = message.id;
       } else if (message.type == 'move_ok') {
         moving = false;
+        if (animationState) {
+          animationState.endLocation = message.loc;
+        } else {
+          // If we don't have an animation state, but received
+          // move_ok, we'll just jump to the new location.
+          Debug.trace("MOVE_OK with no animation in progress.");
+        }
         location = message.loc;
 
         // Request map tiles corresponding to our new location. Only
