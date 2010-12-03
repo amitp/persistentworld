@@ -137,12 +137,21 @@ var items = {};  // map from block id to list of items in that block
 var creatures = {};  // map from block id to list of creatures in that block
 
 
-// For testing: create a few items
+// TEST: create a few items
 items[gridLocationToBlockId(940, 1215)] = [{sprite_id: 0xce, loc: [940, 1215], name: "tree"}];
 items[gridLocationToBlockId(940, 1217)] = [{sprite_id: 0xce, loc: [940, 1217], name: "tree"}];
 items[gridLocationToBlockId(911, 1222)] = [{sprite_id: 0xb1, loc: [911, 1222], name: "treasure chest"}];
 
-
+// TEST: create a creature that moves around by itself
+nakai = {id: "#nakai", name: 'Nakai', sprite_id: 0x72, loc: null};
+moveCreature(nakai, [942, 1220]);
+setInterval(function () {
+    var angle = Math.floor(4*Math.random());
+    var dir = [Math.round(Math.cos(0.25*angle*2*Math.PI)), Math.round(Math.sin(0.25*angle*2*Math.PI))];
+    var newLoc = [nakai.loc[0] + dir[0], nakai.loc[1] + dir[1]];
+    moveCreature(nakai, newLoc);
+}, 200);
+    
 // Move a creature/player, and update the creatures mapping too. The
 // original location or the target location can be null for creature birth/death.
 function moveCreature(creature, to) {
