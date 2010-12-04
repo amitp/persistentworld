@@ -364,8 +364,8 @@ function Client(connectionId, log, sendMessage) {
         if (this.creature.sprite_id != null) {
             sendChatToAll({from: this.creature.name, sprite_id: this.creature.sprite_id,
                            systemtext: " has disconnected.", usertext: ""});
+            moveCreature(this.creature, null);
         }
-        moveCreature(this.creature, null);
         delete clients[connectionId];
     }
 }
