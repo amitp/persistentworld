@@ -253,7 +253,7 @@ package {
 
       inputField.x = 10;
       inputField.y = 410;
-      inputField.width = 398;
+      inputField.width = 399;
       inputField.height = 15;
       inputField.border = true;
       inputField.borderColor = 0x000099;
@@ -327,7 +327,7 @@ package {
 
     public function onKeyDown(e:KeyboardEvent, replay:Boolean = false):void {
       var now:Number;
-      if (!replay) Debug.trace("KEY DOWN", e.keyCode, stage.focus == null? "/stage":"/input");
+      // if (!replay) Debug.trace("KEY DOWN", e.keyCode, stage.focus == null? "/stage":"/input");
 
       var newLoc:Array = [location[0], location[1]];
       if (e.keyCode == 13 /* Enter */) {
