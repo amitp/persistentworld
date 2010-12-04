@@ -13,9 +13,9 @@ package {
     public var socket:Socket = new Socket();
     public var buffer:ByteArray = new ByteArray();
     public var bytesReceived:int = 0;
-    public var pingTimerDelayWhileActive:Number = 1000/2;
+    public var pingTimerDelayWhileActive:Number = 1000/7;
     public var pingTimerDelayWhileInactive:Number = 1000/1;
-    public var pingTimer:Timer = new Timer(1000/5, 0);
+    public var pingTimer:Timer = new Timer(1000/1, 0);
 
     public var onMessageCallback:Function = null;
     public var onSocketReceive:Function = null;
@@ -26,105 +26,119 @@ package {
     }
 
     public function connect(serverAddress:String = null, serverPort:int = 8001):void {
-      socket.addEventListener(Event.CONNECT, function (e:Event):void {
-          Debug.trace("CONNECT -- click to activate");
-          while (_sendQueue.length > 0) {
-            _sendMessage(_sendQueue[0][0], _sendQueue[0][1]);
-            _sendQueue.shift();
-          }
-        });
-      socket.addEventListener(Event.CLOSE, function (e:Event):void {
-          Debug.trace("CLOSE");
-        });
-      socket.addEventListener(IOErrorEvent.IO_ERROR,
-                              function (e:IOErrorEvent):void {
-                                Debug.trace("ERROR", e);
-                              });
-      socket.addEventListener(SecurityErrorEvent.SECURITY_ERROR,
-                              function (e:SecurityErrorEvent):void {
-                                Debug.trace("SECURITY_ERROR", e);
-                              });
-      socket.addEventListener(ProgressEvent.SOCKET_DATA,
-                              function (e:ProgressEvent):void {
-                                var previousPosition:int = buffer.position;
-                                if (socket.bytesAvailable == 0) {
-                                  Debug.trace("ERROR: SOCKET_DATA event has bytesAvailable == 0");
-                                  return;
-                                }
+      socket.addEventListener(Event.CONNECT, onConnect);
+      socket.addEventListener(Event.CLOSE, onClose);
+      socket.addEventListener(IOErrorEvent.IO_ERROR, onIoError);
+      socket.addEventListener(SecurityErrorEvent.SECURITY_ERROR, onSecurityError);
+      socket.addEventListener(ProgressEvent.SOCKET_DATA, onSocketData);
 
-                                bytesReceived += socket.bytesAvailable;
-                                socket.readBytes(buffer, buffer.length, socket.bytesAvailable);
-
-                                while (buffer.bytesAvailable >= 8) {
-                                  // It's long enough that we can read the sizes
-                                  var sizeBuffer:ByteArray = new ByteArray();
-                                  buffer.readBytes(sizeBuffer, 0, 4);
-                                  var jsonLength:int = binaryToInt32LittleEndian(sizeBuffer);
-                                  buffer.readBytes(sizeBuffer, 0, 4);
-                                  var binaryLength:int = binaryToInt32LittleEndian(sizeBuffer);
-
-                                  // Sanity check the lengths
-                                  if (!(8 <= jsonLength && jsonLength <= 10000)) {
-                                    Debug.trace("ERROR: jsonLength corrupt? ", jsonLength);
-                                    socket.close();
-                                    return;
-                                  }
-                                  if (!(0 <= binaryLength && binaryLength <= 10000000)) {
-                                    Debug.trace("ERROR: binaryLength corrupt? ", binaryLength);
-                                    socket.close();
-                                    return;
-                                  }
-
-                                  if (buffer.bytesAvailable >= jsonLength + binaryLength) {
-                                    // The entire message has arrived
-                                    var jsonMessage:String = buffer.readUTFBytes(jsonLength);
-                                    var binaryMessage:ByteArray = new ByteArray();
-                                    if (binaryLength > 0) {
-                                      // NOTE: we don't want
-                                      // binaryLength == 0 to get
-                                      // passed in to readBytes()
-                                      // because that tells it to read
-                                      // everything.
-                                      buffer.readBytes(binaryMessage, 0, binaryLength);
-                                    }
-                                    if (onMessageCallback != null) {
-                                      var message:Object = JSON.decode(jsonMessage);
-                                      if (message.type == 'pong') {
-                                        _lastPingTime = getTimer() - message.timestamp;
-                                      } else {
-                                        // Debug.trace("RECV", binaryMessage.length, jsonMessage);
-                                      }
-                                      onMessageCallback(message, binaryMessage);
-                                    }
-                                    previousPosition = buffer.position;
-                                  } else {
-                                    // We need to wait. Rewind the
-                                    // read position back to where
-                                    // we were, and break out of the
-                                    // loop.
-                                    buffer.position = previousPosition;
-                                    break;
-                                  }
-                                }
-                                      
-                                if (buffer.position == buffer.length && buffer.position > 0) {
-                                  // Reading from the ByteArray
-                                  // doesn't remove the data, so we
-                                  // need to do it ourselves when it's
-                                  // safe to do (e.g. nothing is
-                                  // buffered).
-                                  buffer.clear();
-                                }
-
-                                if (onSocketReceive != null) onSocketReceive();
-                              });
-
-      Debug.trace("Connecting");
+      Debug.trace("CONNECTING...");
       socket.connect(serverAddress, serverPort);
       
       pingTimer.addEventListener(TimerEvent.TIMER, onTimer);
     }
 
+    
+    private function onConnect(e:Event):void {
+      Debug.trace("CONNECTED");
+      while (_sendQueue.length > 0) {
+        _sendMessage(_sendQueue[0][0], _sendQueue[0][1]);
+        _sendQueue.shift();
+      }
+      pingTimer.start();
+    }
+    
+
+    private function onClose(e:Event):void {
+      Debug.trace("CLOSE");
+    }
+    
+
+    private function onIoError(e:IOErrorEvent):void {
+      Debug.trace("ERROR", e);
+    }
+    
+
+    private function onSecurityError(e:SecurityErrorEvent):void {
+      Debug.trace("SECURITY_ERROR", e);
+    }
+
+    
+    private function onSocketData(e:ProgressEvent):void {
+      var previousPosition:int = buffer.position;
+      if (socket.bytesAvailable == 0) {
+        Debug.trace("ERROR: SOCKET_DATA event has bytesAvailable == 0");
+        return;
+      }
+
+      bytesReceived += socket.bytesAvailable;
+      socket.readBytes(buffer, buffer.length, socket.bytesAvailable);
+
+      while (buffer.bytesAvailable >= 8) {
+        // It's long enough that we can read the sizes
+        var sizeBuffer:ByteArray = new ByteArray();
+        buffer.readBytes(sizeBuffer, 0, 4);
+        var jsonLength:int = binaryToInt32LittleEndian(sizeBuffer);
+        buffer.readBytes(sizeBuffer, 0, 4);
+        var binaryLength:int = binaryToInt32LittleEndian(sizeBuffer);
+
+        // Sanity check the lengths
+        if (!(8 <= jsonLength && jsonLength <= 10000)) {
+          Debug.trace("ERROR: jsonLength corrupt? ", jsonLength);
+          socket.close();
+          return;
+        }
+        if (!(0 <= binaryLength && binaryLength <= 10000000)) {
+          Debug.trace("ERROR: binaryLength corrupt? ", binaryLength);
+          socket.close();
+          return;
+        }
+
+        if (buffer.bytesAvailable >= jsonLength + binaryLength) {
+          // The entire message has arrived
+          var jsonMessage:String = buffer.readUTFBytes(jsonLength);
+          var binaryMessage:ByteArray = new ByteArray();
+          if (binaryLength > 0) {
+            // NOTE: we don't want
+            // binaryLength == 0 to get
+            // passed in to readBytes()
+            // because that tells it to read
+            // everything.
+            buffer.readBytes(binaryMessage, 0, binaryLength);
+          }
+          if (onMessageCallback != null) {
+            var message:Object = JSON.decode(jsonMessage);
+            if (message.type == 'pong') {
+              _lastPingTime = getTimer() - message.timestamp;
+            } else {
+              // Debug.trace("RECV", binaryMessage.length, jsonMessage);
+            }
+            onMessageCallback(message, binaryMessage);
+          }
+          previousPosition = buffer.position;
+        } else {
+          // We need to wait. Rewind the
+          // read position back to where
+          // we were, and break out of the
+          // loop.
+          buffer.position = previousPosition;
+          break;
+        }
+      }
+                                      
+      if (buffer.position == buffer.length && buffer.position > 0) {
+        // Reading from the ByteArray
+        // doesn't remove the data, so we
+        // need to do it ourselves when it's
+        // safe to do (e.g. nothing is
+        // buffered).
+        buffer.clear();
+      }
+
+      if (onSocketReceive != null) onSocketReceive();
+    }
+
+  
     // Conversion from int to little-endian 32-bit binary and back
     static public function binaryToInt32LittleEndian(buffer:ByteArray):int {
       return buffer[0] | (buffer[1] << 8) | (buffer[2] << 16) | (buffer[3] << 24);
@@ -141,12 +155,12 @@ package {
                               
     public function activate():void {
       pingTimer.delay = pingTimerDelayWhileActive;
-      if (!pingTimer.running) pingTimer.start();
+      if (socket.connected && !pingTimer.running) pingTimer.start();
     }
 
     public function deactivate():void {
       pingTimer.delay = pingTimerDelayWhileInactive;
-      if (!pingTimer.running) pingTimer.start();
+      if (socket.connected && !pingTimer.running) pingTimer.start();
     }
 
     public function sendMessage(message:Object, binaryPayload:ByteArray=null):void {
