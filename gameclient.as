@@ -405,14 +405,15 @@ package {
         // Request map tiles corresponding to our new location. Only
         // request the map tiles if we don't already have that block,
         // or if that block is already requested.
-        for each (var simblock_id:Object in (message.simblocks_ins || [])) {
-            var simblock_hash:String = simblock_id.toString();
-            if (mapBlocks[simblock_hash] == null) {
-              mapBlocks[simblock_hash] = {};  // Pending
-              client.sendMessage({type: 'map_tiles', simblock_id: simblock_id});
+        if (message.simblocks_ins != null) {
+          for each (var simblock_id:Object in message.simblocks_ins) {
+              var simblock_hash:String = simblock_id.toString();
+              if (mapBlocks[simblock_hash] == null) {
+                mapBlocks[simblock_hash] = {};  // Pending
+                client.sendMessage({type: 'map_tiles', simblock_id: simblock_id});
+              }
             }
-          }
-
+        }
         // TODO: clear map bitmap for blocks in simblocks_del
         
         // HACK: if a movement was delayed because we were already
