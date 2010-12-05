@@ -150,14 +150,12 @@ package {
 
     
     private function activate(e:Event):void {
-      Debug.trace("ACTIVATE");
       pingTimer.delay = pingTimerDelayWhileActive;
       if (socket.connected && !pingTimer.running) pingTimer.start();
     }
 
     
     private function deactivate(e:Event):void {
-      Debug.trace("DEACTIVATE");
       pingTimer.delay = pingTimerDelayWhileInactive;
       if (socket.connected && !pingTimer.running) pingTimer.start();
     }

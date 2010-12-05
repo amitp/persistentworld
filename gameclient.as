@@ -108,21 +108,20 @@ package {
           handleMessage(e.message, e.binary);
         });
       client.addEventListener(Event.CONNECT, function (e:Event):void {
-          Debug.trace("CONNECTED");
+          // TODO: remove 'Connecting' status and use activate/deactivate
         });
       client.addEventListener(Event.CLOSE, function (e:Event):void {
-          Debug.trace("CLOSE");
+          outputMessages.addSystemText("Lost connection. Try reloading.");
         });
       client.addEventListener(IOErrorEvent.IO_ERROR, function (e:IOErrorEvent):void {
-          Debug.trace("IO ERROR", e);
+          outputMessages.addSystemText("I/O Error:" + e.toString());
         });
       client.addEventListener(SecurityErrorEvent.SECURITY_ERROR, function (e:SecurityErrorEvent):void {
-          Debug.trace("SECURITY ERROR", e);
+          outputMessages.addSystemText("Security Error:" + e.toString());
         });
       var timer:Timer = new Timer(50, 1);
       timer.addEventListener(TimerEvent.TIMER,
                              function (e:TimerEvent):void {
-                               Debug.trace("CONNECTING");
                                client.connect();
                              });
       timer.start();
