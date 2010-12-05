@@ -50,6 +50,7 @@ package {
     public var tile_spritesheet:Spritesheet = new oddball_tile();
     public var spriteId:int = int(Math.random()*272);  // 273 sprites in oddball_char
     public var playerName:String = "guest";
+    public var myCreatureId:String = "";
     public var playerStyle:Object = char_spritesheet.makeStyle();
     public var playerIconStyle:Object = char_spritesheet.makeStyle();
     public var playerBitmap:Bitmap = new Bitmap(new BitmapData(2*2 + 8*3, 2*2 + 8*3, true, 0x00000000));
@@ -67,13 +68,27 @@ package {
     // Map objects:
     public var items:Object = {};  // {loc.toString(): {sprite: obj:}}
     public var creatures:Object = {};  // {obj id: clientId: {sprite: bitmap: obj:}}
-    public var myCreatureId:String = "";
+    private var mapBlocks:Object = {};  // {block_id: Bitmap object}
 
     public var colorMap:Array = [];
     public var client:Client = new Client();
     public var pingTime:TextField = new TextField();
     public var inputField:TextField = new TextField();
     public var outputMessages:OutputMessageBox = new OutputMessageBox(400, 200);
+
+    // Server message handlers
+    private var handlers:Object = {
+      'server_identify': handle_server_identify,
+      'move_ok': handle_move_ok,
+      'map_tiles': handle_map_tiles,
+      'item_ins': handle_item_ins,
+      'item_del': handle_item_del,
+      'creature_ins': handle_creature_ins,
+      'creature_del': handle_creature_del,
+      'creature_move': handle_creature_move,
+      'messages': handle_messages,
+      'handle_pong': handle_pong
+    };
     
     public function gameclient() {
       stage.scaleMode = 'noScale';
@@ -105,7 +120,7 @@ package {
         });
 
       client.addEventListener(ServerMessageEvent.SERVER_MESSAGE, function (e:ServerMessageEvent):void {
-          handleMessage(e.message, e.binary);
+          handlers[e.message.type](e.message, e.binary);
         });
       client.addEventListener(Event.CONNECT, function (e:Event):void {
           // TODO: remove 'Connecting' status and use activate/deactivate
@@ -397,104 +412,134 @@ package {
     }
 
 
-    private var mapBlocks:Object = {};
-    public function handleMessage(message:Object, binaryPayload:ByteArray):void {
-      var bitmap:Bitmap;
+    private function handle_server_identify(message:Object, binaryPayload:ByteArray):void {
+      myCreatureId = message.id;
+    }
 
-      if (message.type == 'server_identify') {
-        myCreatureId = message.id;
-      } else if (message.type == 'move_ok') {
-        moving = false;
-        if (animationState) {
-          animationState.endLocation = message.loc;
-        } else {
-          // If we don't have an animation state, but received
-          // move_ok, we'll just jump to the new location.
-          Debug.trace("MOVE_OK with no animation in progress.");
-        }
-        location = message.loc;
-
-        // Request map tiles corresponding to our new location. Only
-        // request the map tiles if we don't already have that block,
-        // or if that block is already requested.
-        if (message.simblocks_ins != null) {
-          for each (var simblock_id:Object in message.simblocks_ins) {
-              var simblock_hash:String = simblock_id.toString();
-              if (mapBlocks[simblock_hash] == null) {
-                mapBlocks[simblock_hash] = {};  // Pending
-                client.sendMessage({type: 'map_tiles', simblock_id: simblock_id});
-              }
-            }
-        }
-        // TODO: clear map bitmap for blocks in simblocks_del
-        
-        // HACK: if a movement was delayed because we were already
-        // moving, trigger the new movement
-        if (_keyQueue) onKeyDown(_keyQueue, true);
-      } else if (message.type == 'map_tiles') {
-        var i:int, tileId:int, x:int, y:int;
-        if (colorMap.length == 0) buildColorMap();
-        i = 0;
-        var bmp:BitmapData = new BitmapData(message.right-message.left, message.bottom-message.top, false);
-        for (x = message.left; x < message.right; x++) {
-          for (y = message.top; y < message.bottom; y++) {
-            tileId = binaryPayload[i++];
-            bmp.setPixel(x - message.left, y - message.top, colorMap[tileId]);
-          }
-        }
-        bmp.lock();
-
-        bitmap = new Bitmap(bmp);
-        bitmap.scaleX = bitmap.scaleY = mapScale;
-        bitmap.x = mapScale * message.left;
-        bitmap.y = mapScale * message.top;
-        
-        simblock_hash = message.simblock_id.toString();
-        mapBlocks[simblock_hash].bitmap = bitmap;
-        terrainLayer.addChild(bitmap);
-      } else if (message.type == 'item_ins') {
-        bitmap = new Bitmap(new BitmapData(playerBitmap.width, playerBitmap.height, true, 0x00000000));
-        tile_spritesheet.drawToBitmap(message.obj.sprite_id, bitmap.bitmapData, playerStyle);
-        bitmap.x = mapScale * message.obj.loc[0] - playerStyle.padding;
-        bitmap.y = mapScale * message.obj.loc[1] - playerStyle.padding;
-        itemLayer.addChild(bitmap);
-
-        var loc:String = message.obj.loc.toString();
-        if (items[loc] != null) Debug.trace("ERROR: ins item, already exists at ", loc);
-        items[loc] = {sprite: bitmap, obj: message.obj};
-      } else if (message.type == 'item_del') {
-        loc = message.obj.loc.toString();
-        if (items[loc] == null) Debug.trace("ERROR: del item, none at ", loc);
-        itemLayer.removeChild(items[loc].sprite);
-        delete items[loc];
-      } else if (message.type == 'creature_ins') {
-        bitmap = new Bitmap(new BitmapData(playerBitmap.width, playerBitmap.height, true, 0x00000000));
-        char_spritesheet.drawToBitmap(message.obj.sprite_id, bitmap.bitmapData, playerStyle);
-        bitmap.x = mapScale * message.obj.loc[0] - playerStyle.padding;
-        bitmap.y = mapScale * message.obj.loc[1] - playerStyle.padding;
-        characterLayer.addChild(bitmap);
-        if (message.obj.id == myCreatureId) bitmap.visible = false;  // it's me!
-        if (creatures[message.obj.id] != null) Debug.trace("ERROR: ins creature, already exists at ", message.obj.id);
-        creatures[message.obj.id] = {sprite: bitmap, obj: message.obj};
-      } else if (message.type == 'creature_del') {
-        if (creatures[message.obj.id] == null) Debug.trace("ERROR: del creature, none at ", message.obj.id);
-        characterLayer.removeChild(creatures[message.obj.id].sprite);
-        delete creatures[message.obj.id];
-      } else if (message.type == 'creature_move') {
-        if (creatures[message.obj.id] == null) Debug.trace("ERROR: move creature, none at ", message.obj.id);
-        bitmap = creatures[message.obj.id].sprite;
-        bitmap.x = mapScale * message.obj.loc[0] - playerStyle.padding;
-        bitmap.y = mapScale * message.obj.loc[1] - playerStyle.padding;
-      } else if (message.type == 'messages') {
-        for each (var chat:Object in message.messages) {
-            var iconSize:Number = 2*playerIconStyle.padding + 8*playerIconStyle.scale;
-            var icon:Bitmap = new Bitmap(new BitmapData(iconSize, iconSize, true, 0xffff00ff));
-            char_spritesheet.drawToBitmap(chat.sprite_id, icon.bitmapData, playerIconStyle);
-            outputMessages.addChat(icon, chat.from, chat.systemtext, chat.usertext);
-        }
-      } else if (message.type == 'pong') {
-        pingTime.text = "ping time: " + (getTimer() - message.timestamp) + "ms" + " recv: " + client._bytesPerSecond + " bytes/second";
+    private function handle_move_ok(message:Object, binaryPayload:ByteArray):void {
+      var simblock_id:Object, simblock_hash:String;
+      
+      moving = false;
+      if (animationState) {
+        animationState.endLocation = message.loc;
+      } else {
+        // If we don't have an animation state, but received
+        // move_ok, we'll just jump to the new location.
+        Debug.trace("MOVE_OK with no animation in progress.");
       }
+      location = message.loc;
+
+      // Request map tiles corresponding to our new location. Only
+      // request the map tiles if we don't already have that block,
+      // or if that block is already requested.
+      if (message.simblocks_ins != null) {
+        for each (simblock_id in message.simblocks_ins) {
+            simblock_hash = simblock_id.toString();
+            if (mapBlocks[simblock_hash] == null) {
+              mapBlocks[simblock_hash] = {};  // Pending
+              client.sendMessage({type: 'map_tiles', simblock_id: simblock_id});
+            }
+          }
+      }
+      // TODO: clear map bitmap for blocks in simblocks_del
+        
+      // HACK: if a movement was delayed because we were already
+      // moving, trigger the new movement
+      if (_keyQueue) onKeyDown(_keyQueue, true);
+    }
+
+    private function handle_map_tiles(message:Object, binaryPayload:ByteArray):void {
+      var i:int, tileId:int, x:int, y:int;
+      var bmp:BitmapData, bitmap:Bitmap;
+      var simblock_hash:String;
+      
+      if (colorMap.length == 0) buildColorMap();
+      i = 0;
+      bmp = new BitmapData(message.right-message.left, message.bottom-message.top, false);
+      for (x = message.left; x < message.right; x++) {
+        for (y = message.top; y < message.bottom; y++) {
+          tileId = binaryPayload[i++];
+          bmp.setPixel(x - message.left, y - message.top, colorMap[tileId]);
+        }
+      }
+      bmp.lock();
+
+      bitmap = new Bitmap(bmp);
+      bitmap.scaleX = bitmap.scaleY = mapScale;
+      bitmap.x = mapScale * message.left;
+      bitmap.y = mapScale * message.top;
+        
+      simblock_hash = message.simblock_id.toString();
+      mapBlocks[simblock_hash].bitmap = bitmap;
+      terrainLayer.addChild(bitmap);
+    }
+
+    private function handle_item_ins(message:Object, _:ByteArray):void {
+      var bitmap:Bitmap;
+      var loc:String;
+      
+      bitmap = new Bitmap(new BitmapData(playerBitmap.width, playerBitmap.height, true, 0x00000000));
+      tile_spritesheet.drawToBitmap(message.obj.sprite_id, bitmap.bitmapData, playerStyle);
+      bitmap.x = mapScale * message.obj.loc[0] - playerStyle.padding;
+      bitmap.y = mapScale * message.obj.loc[1] - playerStyle.padding;
+      itemLayer.addChild(bitmap);
+
+      loc = message.obj.loc.toString();
+      if (items[loc] != null) Debug.trace("ERROR: ins item, already exists at ", loc);
+      items[loc] = {sprite: bitmap, obj: message.obj};
+    }
+
+    private function handle_item_del(message:Object, _:ByteArray):void {
+      var loc:String;
+      
+      loc = message.obj.loc.toString();
+      if (items[loc] == null) Debug.trace("ERROR: del item, none at ", loc);
+      itemLayer.removeChild(items[loc].sprite);
+      delete items[loc];
+    }
+
+    private function handle_creature_ins(message:Object, _:ByteArray):void {
+      var bitmap:Bitmap;
+      
+      bitmap = new Bitmap(new BitmapData(playerBitmap.width, playerBitmap.height, true, 0x00000000));
+      char_spritesheet.drawToBitmap(message.obj.sprite_id, bitmap.bitmapData, playerStyle);
+      bitmap.x = mapScale * message.obj.loc[0] - playerStyle.padding;
+      bitmap.y = mapScale * message.obj.loc[1] - playerStyle.padding;
+      characterLayer.addChild(bitmap);
+      if (message.obj.id == myCreatureId) bitmap.visible = false;  // it's me!
+      if (creatures[message.obj.id] != null) Debug.trace("ERROR: ins creature, already exists at ", message.obj.id);
+      creatures[message.obj.id] = {sprite: bitmap, obj: message.obj};
+    }
+
+    private function handle_creature_del(message:Object, _:ByteArray):void {
+      if (creatures[message.obj.id] == null) Debug.trace("ERROR: del creature, none at ", message.obj.id);
+      characterLayer.removeChild(creatures[message.obj.id].sprite);
+      delete creatures[message.obj.id];
+    }
+
+    private function handle_creature_move(message:Object, _:ByteArray):void {
+      var bitmap:Bitmap;
+      
+      if (creatures[message.obj.id] == null) Debug.trace("ERROR: move creature, none at ", message.obj.id);
+      bitmap = creatures[message.obj.id].sprite;
+      bitmap.x = mapScale * message.obj.loc[0] - playerStyle.padding;
+      bitmap.y = mapScale * message.obj.loc[1] - playerStyle.padding;
+    }
+    
+    private function handle_messages(message:Object, _:ByteArray):void {
+      var chat:Object, iconSize:Number, icon:Bitmap;
+      
+      for each (chat in message.messages) {
+          iconSize = 2*playerIconStyle.padding + 8*playerIconStyle.scale;
+          icon = new Bitmap(new BitmapData(iconSize, iconSize, true, 0xffff00ff));
+          char_spritesheet.drawToBitmap(chat.sprite_id, icon.bitmapData, playerIconStyle);
+          outputMessages.addChat(icon, chat.from, chat.systemtext, chat.usertext);
+        }
+    }
+
+    private function handle_pong(message:Object, _:ByteArray):void {
+      pingTime.text = ("ping time: " + (getTimer() - message.timestamp) + "ms"
+                       + " recv: " + client._bytesPerSecond + " bytes/second");
     }
 
     
