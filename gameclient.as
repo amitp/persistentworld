@@ -94,22 +94,35 @@ package {
                                     {onComplete: function():void { clickToFocusMessage.visible =
                                                                    (clickToFocusMessage.alpha != 0.0); }});
       stage.addEventListener(Event.ACTIVATE, function (e:Event):void {
-          client.activate();
           tween.duration = 0.15;
           tween.setValue('alpha', 0.0);
           if (playerNameEntry != null) stage.focus = playerNameEntry;
         });
       stage.addEventListener(Event.DEACTIVATE, function (e:Event):void {
-          client.deactivate();
           clickToFocusMessage.visible = true;
           tween.duration = 1.5;
           tween.setValue('alpha', 1.0);
         });
 
+      client.addEventListener(ServerMessageEvent.SERVER_MESSAGE, function (e:ServerMessageEvent):void {
+          handleMessage(e.message, e.binary);
+        });
+      client.addEventListener(Event.CONNECT, function (e:Event):void {
+          Debug.trace("CONNECTED");
+        });
+      client.addEventListener(Event.CLOSE, function (e:Event):void {
+          Debug.trace("CLOSE");
+        });
+      client.addEventListener(IOErrorEvent.IO_ERROR, function (e:IOErrorEvent):void {
+          Debug.trace("IO ERROR", e);
+        });
+      client.addEventListener(SecurityErrorEvent.SECURITY_ERROR, function (e:SecurityErrorEvent):void {
+          Debug.trace("SECURITY ERROR", e);
+        });
       var timer:Timer = new Timer(50, 1);
       timer.addEventListener(TimerEvent.TIMER,
                              function (e:TimerEvent):void {
-                               client.onMessageCallback = handleMessage;
+                               Debug.trace("CONNECTING");
                                client.connect();
                              });
       timer.start();
@@ -456,9 +469,6 @@ package {
         itemLayer.removeChild(items[loc].sprite);
         delete items[loc];
       } else if (message.type == 'creature_ins') {
-        // HACK: until we separate server's player representation from connection
-        message.obj.sprite_id = message.obj.sprite_id || message.obj.spriteId;
-
         bitmap = new Bitmap(new BitmapData(playerBitmap.width, playerBitmap.height, true, 0x00000000));
         char_spritesheet.drawToBitmap(message.obj.sprite_id, bitmap.bitmapData, playerStyle);
         bitmap.x = mapScale * message.obj.loc[0] - playerStyle.padding;

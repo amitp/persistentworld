@@ -9,7 +9,7 @@ package {
   import flash.net.*;
   import com.adobe.serialization.json.*;
   
-  public class Client {
+  public class Client extends EventDispatcher {
     public var socket:Socket = new Socket();
     public var buffer:ByteArray = new ByteArray();
     public var bytesReceived:int = 0;
@@ -17,50 +17,44 @@ package {
     public var pingTimerDelayWhileInactive:Number = 1000/1;
     public var pingTimer:Timer = new Timer(1000/1, 0);
 
-    public var onMessageCallback:Function = null;
-    public var onSocketReceive:Function = null;
+    // This class dispatches events:
+    // * Event.CONNECT on connection to the server
+    // * Event.CLOSE on disconnection
+    // * Client.NETWORK_MESSAGE on message receive
+    // * IOErrorEvent.IO_ERROR on socket error
+    // * SecurityErrorEvent.SECURITY_ERROR on socket security error
 
     private var _sendQueue:Array = [];  // Used only until we connect
     
     public function Client() {
+      socket.addEventListener(Event.ACTIVATE, this.activate);
+      socket.addEventListener(Event.DEACTIVATE, this.deactivate);
     }
 
     public function connect(serverAddress:String = null, serverPort:int = 8001):void {
-      socket.addEventListener(Event.CONNECT, onConnect);
-      socket.addEventListener(Event.CLOSE, onClose);
-      socket.addEventListener(IOErrorEvent.IO_ERROR, onIoError);
-      socket.addEventListener(SecurityErrorEvent.SECURITY_ERROR, onSecurityError);
-      socket.addEventListener(ProgressEvent.SOCKET_DATA, onSocketData);
-
-      Debug.trace("CONNECTING...");
+      socket.addEventListener(Event.CONNECT, this.onConnect);
+      socket.addEventListener(Event.CLOSE, this.onClose);
+      socket.addEventListener(IOErrorEvent.IO_ERROR, this.dispatchEvent);
+      socket.addEventListener(SecurityErrorEvent.SECURITY_ERROR, this.dispatchEvent);
+      socket.addEventListener(ProgressEvent.SOCKET_DATA, this.onSocketData);
       socket.connect(serverAddress, serverPort);
-      
-      pingTimer.addEventListener(TimerEvent.TIMER, onTimer);
     }
 
     
     private function onConnect(e:Event):void {
-      Debug.trace("CONNECTED");
       while (_sendQueue.length > 0) {
         _sendMessage(_sendQueue[0][0], _sendQueue[0][1]);
         _sendQueue.shift();
       }
+      pingTimer.addEventListener(TimerEvent.TIMER, onTimer);
       pingTimer.start();
+      dispatchEvent(e);
     }
     
 
     private function onClose(e:Event):void {
-      Debug.trace("CLOSE");
-    }
-    
-
-    private function onIoError(e:IOErrorEvent):void {
-      Debug.trace("ERROR", e);
-    }
-    
-
-    private function onSecurityError(e:SecurityErrorEvent):void {
-      Debug.trace("SECURITY_ERROR", e);
+      pingTimer.removeEventListener(TimerEvent.TIMER, onTimer);
+      dispatchEvent(e);
     }
 
     
@@ -106,15 +100,15 @@ package {
             // everything.
             buffer.readBytes(binaryMessage, 0, binaryLength);
           }
-          if (onMessageCallback != null) {
-            var message:Object = JSON.decode(jsonMessage);
-            if (message.type == 'pong') {
-              _lastPingTime = getTimer() - message.timestamp;
-            } else {
-              // Debug.trace("RECV", binaryMessage.length, jsonMessage);
-            }
-            onMessageCallback(message, binaryMessage);
+
+          var message:Object = JSON.decode(jsonMessage);
+          var event:ServerMessageEvent = new ServerMessageEvent(message, binaryMessage);
+          if (message.type == 'pong') {
+            _lastPingTime = getTimer() - message.timestamp;
+          } else {
+            // Debug.trace("RECV", binaryMessage.length, jsonMessage);
           }
+          this.dispatchEvent(event);
           previousPosition = buffer.position;
         } else {
           // We need to wait. Rewind the
@@ -135,7 +129,7 @@ package {
         buffer.clear();
       }
 
-      if (onSocketReceive != null) onSocketReceive();
+      dispatchEvent(e);
     }
 
   
@@ -144,6 +138,7 @@ package {
       return buffer[0] | (buffer[1] << 8) | (buffer[2] << 16) | (buffer[3] << 24);
     }
 
+    
     static public function int32ToBinaryLittleEndian(value:int):ByteArray {
       var bytes:ByteArray = new ByteArray();
       bytes.writeByte(value & 0xff);
@@ -152,16 +147,21 @@ package {
       bytes.writeByte((value >> 24) & 0xff);
       return bytes;
     }
-                              
-    public function activate():void {
+
+    
+    private function activate(e:Event):void {
+      Debug.trace("ACTIVATE");
       pingTimer.delay = pingTimerDelayWhileActive;
       if (socket.connected && !pingTimer.running) pingTimer.start();
     }
 
-    public function deactivate():void {
+    
+    private function deactivate(e:Event):void {
+      Debug.trace("DEACTIVATE");
       pingTimer.delay = pingTimerDelayWhileInactive;
       if (socket.connected && !pingTimer.running) pingTimer.start();
     }
+
 
     public function sendMessage(message:Object, binaryPayload:ByteArray=null):void {
       if (socket.connected) {
@@ -171,6 +171,7 @@ package {
       }
     }
 
+    
     private function _sendMessage(message:Object, binaryPayload:ByteArray):void {
       var jsonMessage:String = JSON.encode(message);
       var packet:ByteArray = new ByteArray();
