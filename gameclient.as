@@ -13,7 +13,8 @@ package {
   import flash.net.SharedObject;
   import com.gskinner.motion.GTween;
   import com.gskinner.motion.easing.*;
-  
+
+  [SWF(width="600",height="500")]
   public class gameclient extends Sprite {
     static public var TILES_ON_SCREEN:int = 13;
     static public var TILE_PADDING:int = 3;
@@ -120,7 +121,7 @@ package {
         });
 
       client.addEventListener(ServerMessageEvent.SERVER_MESSAGE, function (e:ServerMessageEvent):void {
-          handlers[e.message.type](e.message, e.binary);
+          handlers[e.message.type].call(this, e.message, e.binary);
         });
       client.addEventListener(Event.CONNECT, function (e:Event):void {
           // TODO: remove 'Connecting' status and use activate/deactivate
@@ -147,6 +148,7 @@ package {
       }
 
       if (debugMode) {
+        spriteId = 65;
         setupGameUi();
       } else {
         setupIntroUi();
