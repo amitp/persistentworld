@@ -25,12 +25,12 @@ package {
     // positioned in absolute coordinate space. Moving the camera
     // means moving and zooming the map area within the map
     // parent. You can think of the map parent as being a "window" on
-    // top of the map area. The map area is divided into three layers:
-    // terrainLayer, itemLayer, characterLayer.
+    // top of the map area. The map area is divided into two layers:
+    // terrainLayer, objectLayer.  TODO: multiple objects may be in
+    // the object layer in the same grid space; figure out how to display.
     static public var mapScale:Number = 3.0 * 8;
     public var terrainLayer:Sprite = new Sprite();
-    public var itemLayer:Sprite = new Sprite();
-    public var characterLayer:Sprite = new Sprite();
+    public var objectLayer:Sprite = new Sprite();
     public var mapArea:Sprite = new Sprite();
     public var mapSprite:Sprite = new Sprite();
     public var mapParent:Sprite = new Sprite();
@@ -60,15 +60,14 @@ package {
     // Only present during the login, and null at other times:
     public var playerNameEntry:TextField = null;
     
-    public var location:Array = [945, 1220];
+    public var playerLocation:Array = [945, 1220];
     public var moving:Boolean = false;
     public var _keyQueue:KeyboardEvent = null;  // next key that we haven't processed yet
     
     public var animationState:Object = null;
 
     // Map objects:
-    public var items:Object = {};  // {loc.toString(): {sprite: obj:}}
-    public var creatures:Object = {};  // {obj id: clientId: {sprite: bitmap: obj:}}
+    public var objects:Object = {};  // {obj id: {sprite: bitmap: obj:}}
     private var mapBlocks:Object = {};  // {block_id: Bitmap object}
 
     public var colorMap:Array = [];
@@ -82,11 +81,9 @@ package {
       'server_identify': handle_server_identify,
       'move_ok': handle_move_ok,
       'map_tiles': handle_map_tiles,
-      'item_ins': handle_item_ins,
-      'item_del': handle_item_del,
-      'creature_ins': handle_creature_ins,
-      'creature_del': handle_creature_del,
-      'creature_move': handle_creature_move,
+      'obj_ins': handle_obj_ins,
+      'obj_del': handle_obj_del,
+      'obj_move': handle_obj_move,
       'messages': handle_messages,
       'handle_pong': handle_pong
     };
@@ -257,8 +254,7 @@ package {
       addChild(mapMask);
 
       mapArea.addChild(terrainLayer);
-      mapArea.addChild(itemLayer);
-      mapArea.addChild(characterLayer);
+      mapArea.addChild(objectLayer);
 
       mapSprite.addChild(mapArea);
       mapSprite.x = 200;
@@ -311,7 +307,7 @@ package {
       stage.addEventListener(KeyboardEvent.KEY_DOWN, onKeyDown);
         
       client.sendMessage({type: 'client_identify', name: playerName, sprite_id: spriteId});
-      client.sendMessage({type: 'move', from: location, to: location});
+      client.sendMessage({type: 'move', from: playerLocation, to: playerLocation});
       onEnterFrame(null);
     }
 
@@ -341,8 +337,8 @@ package {
           e = null;  // hack to make sure we still set x,y
         }
       } else {
-        camera.x = location[0];
-        camera.y = location[1];
+        camera.x = playerLocation[0];
+        camera.y = playerLocation[1];
         if (_keyQueue) onKeyDown(_keyQueue, true);
       }
       if (animationState != null || e == null) {
@@ -358,7 +354,7 @@ package {
       var now:Number;
       // if (!replay) Debug.trace("KEY DOWN", e.keyCode, stage.focus == null? "/stage":"/input");
 
-      var newLoc:Array = [location[0], location[1]];
+      var newLoc:Array = [playerLocation[0], playerLocation[1]];
       if (e.keyCode == 13 /* Enter */) {
         if (stage.focus == inputField) {
           // End text entry by sending to server
@@ -390,16 +386,16 @@ package {
       else if (e.keyCode == 38 /* UP */) { newLoc[1] -= WALK_STEP; }
       else if (e.keyCode == 40 /* DOWN */) { newLoc[1] += WALK_STEP; }
           
-      if (newLoc[0] != location[0] || newLoc[1] != location[1]) {
+      if (newLoc[0] != playerLocation[0] || newLoc[1] != playerLocation[1]) {
         if (replay) _keyQueue = null;
         if (!moving && animationState == null) {
           e.updateAfterEvent();
           moving = true;
-          client.sendMessage({type: 'move', from: location, to: newLoc});
+          client.sendMessage({type: 'move', from: playerLocation, to: newLoc});
           now = getTimer();
           animationState = {
-            beginLocation: location,
-            middleLocation: [0.9*newLoc[0]+0.1*location[0], 0.9*newLoc[1]+0.1*location[1]],
+            beginLocation: playerLocation,
+            middleLocation: [0.9*newLoc[0]+0.1*playerLocation[0], 0.9*newLoc[1]+0.1*playerLocation[1]],
             endLocation: null,  // null until we get the ok from the server
             beginTime: now,
             middleTime: now + 0.9*WALK_TIME,
@@ -429,7 +425,7 @@ package {
         // move_ok, we'll just jump to the new location.
         Debug.trace("MOVE_OK with no animation in progress.");
       }
-      location = message.loc;
+      playerLocation = message.loc;
 
       // Request map tiles corresponding to our new location. Only
       // request the map tiles if we don't already have that block,
@@ -476,54 +472,34 @@ package {
       terrainLayer.addChild(bitmap);
     }
 
-    private function handle_item_ins(message:Object, _:ByteArray):void {
-      var bitmap:Bitmap;
-      var loc:String;
-      
-      bitmap = new Bitmap(new BitmapData(playerBitmap.width, playerBitmap.height, true, 0x00000000));
-      tile_spritesheet.drawToBitmap(message.obj.sprite_id, bitmap.bitmapData, playerStyle);
-      bitmap.x = mapScale * message.obj.loc[0] - playerStyle.padding;
-      bitmap.y = mapScale * message.obj.loc[1] - playerStyle.padding;
-      itemLayer.addChild(bitmap);
-
-      loc = message.obj.loc.toString();
-      if (items[loc] != null) Debug.trace("ERROR: ins item, already exists at ", loc);
-      items[loc] = {sprite: bitmap, obj: message.obj};
-    }
-
-    private function handle_item_del(message:Object, _:ByteArray):void {
-      var loc:String;
-      
-      loc = message.obj.loc.toString();
-      if (items[loc] == null) Debug.trace("ERROR: del item, none at ", loc);
-      itemLayer.removeChild(items[loc].sprite);
-      delete items[loc];
-    }
-
-    private function handle_creature_ins(message:Object, _:ByteArray):void {
+    private function handle_obj_ins(message:Object, _:ByteArray):void {
       var bitmap:Bitmap;
       
       bitmap = new Bitmap(new BitmapData(playerBitmap.width, playerBitmap.height, true, 0x00000000));
-      char_spritesheet.drawToBitmap(message.obj.sprite_id, bitmap.bitmapData, playerStyle);
+      if (message.obj.sprite_id >= 0x1000) {
+        tile_spritesheet.drawToBitmap(message.obj.sprite_id - 0x1000, bitmap.bitmapData, playerStyle);
+      } else {
+        char_spritesheet.drawToBitmap(message.obj.sprite_id, bitmap.bitmapData, playerStyle);
+      }
       bitmap.x = mapScale * message.obj.loc[0] - playerStyle.padding;
       bitmap.y = mapScale * message.obj.loc[1] - playerStyle.padding;
-      characterLayer.addChild(bitmap);
+      objectLayer.addChild(bitmap);
       if (message.obj.id == myCreatureId) bitmap.visible = false;  // it's me!
-      if (creatures[message.obj.id] != null) Debug.trace("ERROR: ins creature, already exists at ", message.obj.id);
-      creatures[message.obj.id] = {sprite: bitmap, obj: message.obj};
+      if (objects[message.obj.id] != null) Debug.trace("ERROR: ins creature, already exists at ", message.obj.id);
+      objects[message.obj.id] = {sprite: bitmap, obj: message.obj};
     }
 
-    private function handle_creature_del(message:Object, _:ByteArray):void {
-      if (creatures[message.obj.id] == null) Debug.trace("ERROR: del creature, none at ", message.obj.id);
-      characterLayer.removeChild(creatures[message.obj.id].sprite);
-      delete creatures[message.obj.id];
+    private function handle_obj_del(message:Object, _:ByteArray):void {
+      if (objects[message.obj.id] == null) Debug.trace("ERROR: del creature, none at ", message.obj.id);
+      objectLayer.removeChild(objects[message.obj.id].sprite);
+      delete objects[message.obj.id];
     }
 
-    private function handle_creature_move(message:Object, _:ByteArray):void {
+    private function handle_obj_move(message:Object, _:ByteArray):void {
       var bitmap:Bitmap;
       
-      if (creatures[message.obj.id] == null) Debug.trace("ERROR: move creature, none at ", message.obj.id);
-      bitmap = creatures[message.obj.id].sprite;
+      if (objects[message.obj.id] == null) Debug.trace("ERROR: move creature, none at ", message.obj.id);
+      bitmap = objects[message.obj.id].sprite;
       bitmap.x = mapScale * message.obj.loc[0] - playerStyle.padding;
       bitmap.y = mapScale * message.obj.loc[1] - playerStyle.padding;
     }
