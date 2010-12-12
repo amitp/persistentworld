@@ -67,8 +67,9 @@ package {
     public var animationState:Object = null;
 
     // Map objects:
-    public var objects:Object = {};  // {obj id: {sprite: bitmap: obj:}}
-    private var mapBlocks:Object = {};  // {block_id: Bitmap object}
+    public var contents:Object = {};  // {block or obj id: [obj, ...]}
+    public var objects:Object = {};  // {obj id: obj}
+    public var representations:Object = {};  // {block or obj id: Bitmap object}
 
     public var colorMap:Array = [];
     public var client:Client = new Client();
@@ -415,7 +416,7 @@ package {
     }
 
     private function handle_move_ok(message:Object, binaryPayload:ByteArray):void {
-      var simblock_id:Object, simblock_hash:String;
+      var simblock_id:int, simblock_hash:String;
       
       moving = false;
       if (animationState) {
@@ -433,8 +434,8 @@ package {
       if (message.simblocks_ins != null) {
         for each (simblock_id in message.simblocks_ins) {
             simblock_hash = simblock_id.toString();
-            if (mapBlocks[simblock_hash] == null) {
-              mapBlocks[simblock_hash] = {};  // Pending
+            if (representations[simblock_hash] == null) {
+              representations[simblock_hash] = {};  // Pending
               client.sendMessage({type: 'map_tiles', simblock_id: simblock_id});
             }
           }
@@ -468,7 +469,7 @@ package {
       bitmap.y = mapScale * message.top;
         
       simblock_hash = message.simblock_id.toString();
-      mapBlocks[simblock_hash].bitmap = bitmap;
+      representations[simblock_hash].bitmap = bitmap;
       terrainLayer.addChild(bitmap);
     }
 
@@ -485,21 +486,23 @@ package {
       bitmap.y = mapScale * message.obj.loc[1] - playerStyle.padding;
       objectLayer.addChild(bitmap);
       if (message.obj.id == myCreatureId) bitmap.visible = false;  // it's me!
-      if (objects[message.obj.id] != null) Debug.trace("ERROR: ins creature, already exists at ", message.obj.id);
-      objects[message.obj.id] = {sprite: bitmap, obj: message.obj};
+      if (objects[message.obj.id] != null) Debug.trace("ERROR: obj_ins, already exists at ", message.obj.id);
+      objects[message.obj.id] = message.obj;
+      representations[message.obj.id] = bitmap;
     }
 
     private function handle_obj_del(message:Object, _:ByteArray):void {
-      if (objects[message.obj.id] == null) Debug.trace("ERROR: del creature, none at ", message.obj.id);
-      objectLayer.removeChild(objects[message.obj.id].sprite);
+      if (objects[message.obj.id] == null) Debug.trace("ERROR: obj_del, none at ", message.obj.id);
+      objectLayer.removeChild(representations[message.obj.id]);
       delete objects[message.obj.id];
+      delete representations[message.obj.id];
     }
 
     private function handle_obj_move(message:Object, _:ByteArray):void {
       var bitmap:Bitmap;
       
-      if (objects[message.obj.id] == null) Debug.trace("ERROR: move creature, none at ", message.obj.id);
-      bitmap = objects[message.obj.id].sprite;
+      if (objects[message.obj.id] == null) Debug.trace("ERROR: obj_move, none at ", message.obj.id);
+      bitmap = representations[message.obj.id];
       bitmap.x = mapScale * message.obj.loc[0] - playerStyle.padding;
       bitmap.y = mapScale * message.obj.loc[1] - playerStyle.padding;
     }

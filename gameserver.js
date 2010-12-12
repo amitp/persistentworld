@@ -131,26 +131,25 @@ var clientDefaultLocation = [945, 1220];
 var eventId = 1;  // each client tracks last eventId seen
 var events = {};  // map from block id to list of events (ins, del, move)
 
-var objects = {};  // map from block id to list of objects in that block
+var contents = {};  // map from location id to set of objects at that location
+var objects = {};  // map from object id to object
 
 
 // TEST: create a few items; HACK: use sprite_id >= 0x1000 as alternate spritesheet
-tree1 = {id: "#obj1", sprite_id: 0x10ce, loc: null, name: "tree"};
-tree2 = {id: "#obj2", sprite_id: 0x10ce, loc: null, name: "tree"};
-treasure_chest = {id: "#obj3", sprite_id: 0x10b1, loc: null, name: "treasure chest"};
-moveObject(tree1, [940, 1215]);
-moveObject(tree2, [940, 1217]);
-moveObject(treasure_chest, [911, 1222]);
+createObject("#obj1", [940, 1215], {sprite_id: 0x10ce, name: "tree"});
+createObject("#obj2", [940, 1217], {sprite_id: 0x10ce, name: "tree"});
+createObject("#obj3", [911, 1222], {sprite_id: 0x10b1, name: "treasure chest"});
 
 // TEST: create a creature that moves around by itself
-nakai = {id: "#nakai", name: 'Nakai', sprite_id: 0x72, loc: null};
-moveObject(nakai, [942, 1220]);
+nakai = createObject("#nakai", [942, 1220], {name: 'Nakai', sprite_id: 0x72});
 setInterval(function () {
     var angle = Math.floor(4*Math.random());
     var dir = [Math.round(Math.cos(0.25*angle*2*Math.PI)), Math.round(Math.sin(0.25*angle*2*Math.PI))];
     var newLoc = [nakai.loc[0] + dir[0], nakai.loc[1] + dir[1]];
     if (!objectAtLocation(newLoc)) {
+        var obj = createObject("#obj:"+nakai.loc[0]+":"+nakai.loc[1], [nakai.loc[0], nakai.loc[1]], {sprite_id: 0x10b1, name: "treasure chest"});
         moveObject(nakai, newLoc);
+        setTimeout(function () {  destroyObject(obj); }, 3500);
     }
 }, 1000);
 
@@ -159,14 +158,34 @@ setInterval(function () {
 function objectAtLocation(loc) {
     function test(obj) { return obj.loc[0] == loc[0] && obj.loc[1] == loc[1]; }
     var blockId = gridLocationToBlockId(loc[0], loc[1]);
-    return _.detect(objects[blockId] || [], test) || null;
+    return _.detect(contents[blockId] || [], test) || null;
 }
 
-            
+
+// Create an object and insert it into the appropriate maps
+function createObject(id, loc, params) {
+    // TODO: assert that loc and id aren't set
+    params.id = id;
+    params.loc = null;
+    // TODO: assert that this id isn't used already
+    objects[id] = params;
+    moveObject(params, loc);
+    return params;
+}
+                     
+// Destroy an object and update the appropriate maps
+function destroyObject(obj) {
+    // TODO: assert that this id exists in the objects map
+    moveObject(obj, null);
+    delete objects[obj.id];
+    // obj.id = null;
+}
+                     
 // Move a creature/player, and update the creatures mapping too. The
 // original location or the target location can be null for creature birth/death.
 function moveObject(object, to) {
     var i;
+    // TODO: from and to can be other objects, not only grid locations
     var from = object.loc;
     var fromBlock = from && gridLocationToBlockId(from[0], from[1]);
     var toBlock = to && gridLocationToBlockId(to[0], to[1]);
@@ -174,17 +193,17 @@ function moveObject(object, to) {
     if (fromBlock != toBlock) {
         // Remove this object from the old block
         if (fromBlock != null) {
-            i = objects[fromBlock].indexOf(object);
-            if (i < 0) log("ERROR: object does not exist in objects map");
-            objects[fromBlock].splice(i, 1);
+            i = contents[fromBlock].indexOf(object);
+            if (i < 0) log("ERROR: object does not exist in contents map");
+            contents[fromBlock].splice(i, 1);
             if (!events[fromBlock]) events[fromBlock] = [];
             events[fromBlock].push({id: eventId, type: 'obj_del', obj: object});
             eventId++;
         }
         // Add this object to the new block
         if (toBlock != null) {
-            if (!objects[toBlock]) objects[toBlock] = [];
-            objects[toBlock].push(object);
+            if (!contents[toBlock]) contents[toBlock] = [];
+            contents[toBlock].push(object);
             if (!events[toBlock]) events[toBlock] = [];
             events[toBlock].push({id: eventId, type: 'obj_ins', obj: object});
             eventId++;
@@ -224,14 +243,14 @@ function Client(connectionId, log, sendMessage) {
 
     // The client is now subscribed to this block, so send the full contents
     function insertSubscription(blockId) {
-        (objects[blockId] || []).forEach(function (obj) {
+        (contents[blockId] || []).forEach(function (obj) {
             sendMessage({type: 'obj_ins', obj: obj});
         });
     }
 
     // The client no longer subscribes to this block, so remove contents
     function deleteSubscription(blockId) {
-        (objects[blockId] || []).forEach(function (obj) {
+        (contents[blockId] || []).forEach(function (obj) {
             sendMessage({type: 'obj_del', obj: {id: obj.id}});
         });
     }
