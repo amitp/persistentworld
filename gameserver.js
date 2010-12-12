@@ -5,6 +5,7 @@
 require.paths.unshift('/Users/amitp/Projects/src/underscore')
 var fs = require('fs');
 var util = require('util');
+var assert = require('assert');
 var server = require('./Server');
 var _ = require('underscore');
 
@@ -42,59 +43,58 @@ function buildMap() {
 buildMap();
 
 
-// Simblocks are map blocks that the client "subscribes"
-// to. Events in the subscribed areas are sent to the client: map
-// tiles never change (but have to be sent once).
-var simblockSize = 16;  // TODO: figure out best size here (24?)
+// Chunks are blocks of the map. The server simulates objects one
+// chunk at a time. The client subscribes to chunks. Events in the
+// subscribed areas are sent to the client.  A chunk id looks like
+// "@chunk:x:y".  A grid location id looks like "@grid:x:y".
+var chunkSize = 16;
 
-
-function simblockLocationToId(blockX, blockY) {
-    var span = map.width / simblockSize;
-    if (0 <= blockX && blockX < span && 0 <= blockY && blockY < span) {
-        return blockX + blockY * span;
-    } else {
-        util.log("ERROR: simblockLocationToId(" + blockX + "," + blockY + ") span=" + span);
-        return null;
-    }
+function chunkLocationToId(chunkX, chunkY) {
+    var span = map.width / chunkSize;
+    assert.ok(0 <= chunkX && chunkX < span && 0 <= chunkY && chunkY < span,
+              "ERROR: chunkLocationToId(" + chunkX + "," + chunkY + ") span=" + span);
+    return '@chunk:' + chunkX + ':' + chunkY;
 }
 
-
-function simblockIdToLocation(simblockId) {
-    var span = map.width / simblockSize;
-    return {blockX: simblockId % span, blockY: Math.floor(simblockId / span)};
+function chunkIdToLocation(chunkId) {
+    var span = map.width / chunkSize;
+    var parse = chunkId.split(':');
+    assert.equal(parse.length, 3);
+    assert.equal(parse[0], '@chunk');
+    return {chunkX: parseInt(parse[1]), chunkY: parseInt(parse[2])};
 }
 
 
 function gridLocationToBlockId(x, y) {
-    return simblockLocationToId(Math.floor(x / simblockSize), Math.floor(y / simblockSize));
+    return chunkLocationToId(Math.floor(x / chunkSize), Math.floor(y / chunkSize));
 }
 
         
-function simblocksSurroundingLocation(location) {
+function chunksSurroundingLocation(location) {
     // TODO: we're currently generating a square but it would be
     // better for the network (spread map loads out over time) if this
-    // were a circular region.
+    // were a circular region.  TODO: hysteresis
     var radius = 9;  // Approximate half-size of client viewport
-    var left = Math.floor((location[0] - radius) / simblockSize);
-    var right = Math.ceil((location[0] + radius) / simblockSize);
-    var top = Math.floor((location[1] - radius) / simblockSize);
-    var bottom = Math.ceil((location[1] + radius) / simblockSize);
-    var blocks = [];
+    var left = Math.floor((location[0] - radius) / chunkSize);
+    var right = Math.ceil((location[0] + radius) / chunkSize);
+    var top = Math.floor((location[1] - radius) / chunkSize);
+    var bottom = Math.ceil((location[1] + radius) / chunkSize);
+    var chunks = [];
     for (var x = left; x < right; x++) {
         for (var y = top; y < bottom; y++) {
-            blocks.push(simblockLocationToId(x, y));
+            chunks.push(chunkLocationToId(x, y));
         }
     }
     // TODO: blocks should be sorted by distance from location
-    return blocks;
+    return chunks;
 }
 
 
-function simblockBounds(simblockId) {
-    var location = simblockIdToLocation(simblockId);
-    var left = location.blockX * simblockSize;
-    var top = location.blockY * simblockSize;
-    return {left: left, top: top, right: left+simblockSize, bottom: top+simblockSize};
+function chunkBounds(chunkId) {
+    var location = chunkIdToLocation(chunkId);
+    var left = location.chunkX * chunkSize;
+    var top = location.chunkY * chunkSize;
+    return {left: left, top: top, right: left+chunkSize, bottom: top+chunkSize};
 }
 
 
@@ -316,19 +316,19 @@ function Client(connectionId, log, sendMessage) {
             // per-block event ids.
             this.sendAllEvents();
             
-            // The list of simblocks that the client should be subscribed to
-            var simblocks = simblocksSurroundingLocation(this.object.loc);
+            // The list of chunks that the client should be subscribed to
+            var chunks = chunksSurroundingLocation(this.object.loc);
             // Compute the difference between the new list and the old list
-            var inserted = setDifference(simblocks, this.subscribedTo);
-            var deleted = setDifference(this.subscribedTo, simblocks);
+            var inserted = setDifference(chunks, this.subscribedTo);
+            var deleted = setDifference(this.subscribedTo, chunks);
             // Set the new list on the server side
-            this.subscribedTo = simblocks;
+            this.subscribedTo = chunks;
 
             // The reply will tell the client where the player is now
             var reply = {type: 'move_ok', loc: this.object.loc};
             // Set the new list on the client side
-            if (inserted.length > 0) reply.simblocks_ins = inserted;
-            if (deleted.length > 0) reply.simblocks_del = deleted;
+            if (inserted.length > 0) reply.chunks_ins = inserted;
+            if (deleted.length > 0) reply.chunks_del = deleted;
             sendMessage(reply);
 
             // Send any additional data related to the change in subscriptions.
@@ -339,14 +339,14 @@ function Client(connectionId, log, sendMessage) {
             sendMessage({
                 type: 'move_ok',
                 loc: clientDefaultLocation,
-                simblocks: simblocksSurroundingLocation(clientDefaultLocation)
+                chunks: chunksSurroundingLocation(clientDefaultLocation)
             });
         } else if (message.type == 'map_tiles') {
-            var blockRange = simblockBounds(message.simblock_id);
+            var blockRange = chunkBounds(message.chunk_id);
             var mapTiles = constructMapTiles(blockRange.left, blockRange.right, blockRange.top, blockRange.bottom);
             sendMessage({
                 type: 'map_tiles',
-                simblock_id: message.simblock_id,
+                chunk_id: message.chunk_id,
                 left: mapTiles.left,
                 right: mapTiles.right,
                 top: mapTiles.top,

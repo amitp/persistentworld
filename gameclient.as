@@ -416,7 +416,7 @@ package {
     }
 
     private function handle_move_ok(message:Object, binaryPayload:ByteArray):void {
-      var simblock_id:int, simblock_hash:String;
+      var chunk_id:String;
       
       moving = false;
       if (animationState) {
@@ -431,16 +431,15 @@ package {
       // Request map tiles corresponding to our new location. Only
       // request the map tiles if we don't already have that block,
       // or if that block is already requested.
-      if (message.simblocks_ins != null) {
-        for each (simblock_id in message.simblocks_ins) {
-            simblock_hash = simblock_id.toString();
-            if (representations[simblock_hash] == null) {
-              representations[simblock_hash] = {};  // Pending
-              client.sendMessage({type: 'map_tiles', simblock_id: simblock_id});
+      if (message.chunks_ins != null) {
+        for each (chunk_id in message.chunks_ins) {
+            if (representations[chunk_id] == null) {
+              representations[chunk_id] = {};  // Pending
+              client.sendMessage({type: 'map_tiles', chunk_id: chunk_id});
             }
           }
       }
-      // TODO: clear map bitmap for blocks in simblocks_del
+      // TODO: clear map bitmap for blocks in chunks_del
         
       // HACK: if a movement was delayed because we were already
       // moving, trigger the new movement
@@ -450,7 +449,6 @@ package {
     private function handle_map_tiles(message:Object, binaryPayload:ByteArray):void {
       var i:int, tileId:int, x:int, y:int;
       var bmp:BitmapData, bitmap:Bitmap;
-      var simblock_hash:String;
       
       if (colorMap.length == 0) buildColorMap();
       i = 0;
@@ -468,8 +466,7 @@ package {
       bitmap.x = mapScale * message.left;
       bitmap.y = mapScale * message.top;
         
-      simblock_hash = message.simblock_id.toString();
-      representations[simblock_hash].bitmap = bitmap;
+      representations[chunk_id].bitmap = bitmap;
       terrainLayer.addChild(bitmap);
     }
 
