@@ -52,7 +52,7 @@ var chunkSize = 16;
 function chunkLocationToId(chunkX, chunkY) {
     var span = map.width / chunkSize;
     assert.ok(0 <= chunkX && chunkX < span && 0 <= chunkY && chunkY < span,
-              "ERROR: chunkLocationToId(" + chunkX + "," + chunkY + ") span=" + span);
+              "ERROR: chunkLocationToId(" + chunkX + "," + chunkY + ") out of range");
     return '@chunk:' + chunkX + ':' + chunkY;
 }
 
@@ -64,28 +64,51 @@ function chunkIdToLocation(chunkId) {
     return {chunkX: parseInt(parse[1]), chunkY: parseInt(parse[2])};
 }
 
+function gridLocationToId(x, y) {
+    assert.ok(0 <= x && x < map.width && 0 <= y && y < map.height,
+              "ERROR: gridLocationToId(" + x + "," + y + ") out of range");
+    return '@grid:' + x + ':' + y;
+}
 
-function gridLocationToBlockId(x, y) {
+function gridIdToLocation(gridId) {
+    assert.equal(typeof gridId, 'string');
+    var parse = gridId.split(':');
+    assert.equal(parse.length, 3);
+    assert.equal(parse[0], '@grid');
+    return {x: parseInt(parse[1]), y: parseInt(parse[2])};
+}
+
+function gridIdAdjust(gridId, dx, dy) {
+    var location = gridIdToLocation(gridId);
+    return gridLocationToId(location.x+dx, location.y+dy);
+}
+
+function gridLocationToChunkId(x, y) {
     return chunkLocationToId(Math.floor(x / chunkSize), Math.floor(y / chunkSize));
 }
 
+function gridIdToChunkId(gridId) {
+    var loc = gridIdToLocation(gridId);
+    return gridLocationToChunkId(loc.x, loc.y);
+}
         
-function chunksSurroundingLocation(location) {
+function chunksSurroundingLocation(gridId) {
     // TODO: we're currently generating a square but it would be
     // better for the network (spread map loads out over time) if this
-    // were a circular region.  TODO: hysteresis
+    // were a circular region.  TODO: hysteresis would help too
     var radius = 9;  // Approximate half-size of client viewport
-    var left = Math.floor((location[0] - radius) / chunkSize);
-    var right = Math.ceil((location[0] + radius) / chunkSize);
-    var top = Math.floor((location[1] - radius) / chunkSize);
-    var bottom = Math.ceil((location[1] + radius) / chunkSize);
+    var location = gridIdToLocation(gridId);
+    var left = Math.floor((location.x - radius) / chunkSize);
+    var right = Math.ceil((location.x + radius) / chunkSize);
+    var top = Math.floor((location.y - radius) / chunkSize);
+    var bottom = Math.ceil((location.y + radius) / chunkSize);
     var chunks = [];
     for (var x = left; x < right; x++) {
         for (var y = top; y < bottom; y++) {
             chunks.push(chunkLocationToId(x, y));
         }
     }
-    // TODO: blocks should be sorted by distance from location
+    // TODO: chunks should be sorted by distance from location
     return chunks;
 }
 
@@ -125,57 +148,67 @@ function constructMapTiles(left, right, top, bottom) {
 
 // Server state
 var clients = {};  // map from the client.id to the Client object
-var clientDefaultLocation = [945, 1220];
+var clientDefaultLocation = gridLocationToId(945, 1220);
 
 // TODO: build event manager
 var eventId = 1;  // each client tracks last eventId seen
-var events = {};  // map from block id to list of events (ins, del, move)
+var events = {};  // map from chunk id to list of events (ins, del, move)
 
 var contents = {};  // map from location id to set of objects at that location
 var objects = {};  // map from object id to object
 
 
 // TEST: create a few items; HACK: use sprite_id >= 0x1000 as alternate spritesheet
-createObject("#obj1", [940, 1215], {sprite_id: 0x10ce, name: "tree"});
-createObject("#obj2", [940, 1217], {sprite_id: 0x10ce, name: "tree"});
-createObject("#obj3", [911, 1222], {sprite_id: 0x10b1, name: "treasure chest"});
+createObject('#obj1', gridLocationToId(940, 1215), {sprite_id: 0x10ce, name: "tree"});
+createObject('#obj2', gridLocationToId(940, 1217), {sprite_id: 0x10ce, name: "tree"});
+createObject('#obj3', gridLocationToId(911, 1222), {sprite_id: 0x10b1, name: "treasure chest"});
 
 // TEST: create a creature that moves around by itself
-nakai = createObject("#nakai", [942, 1220], {name: 'Nakai', sprite_id: 0x72});
+nakai = createObject('#nakai', gridLocationToId(942, 1220), {name: 'Nakai', sprite_id: 0x72});
 setInterval(function () {
     var angle = Math.floor(4*Math.random());
-    var dir = [Math.round(Math.cos(0.25*angle*2*Math.PI)), Math.round(Math.sin(0.25*angle*2*Math.PI))];
-    var newLoc = [nakai.loc[0] + dir[0], nakai.loc[1] + dir[1]];
+    var dx = Math.round(Math.cos(0.25*angle*2*Math.PI));
+    var dy = Math.round(Math.sin(0.25*angle*2*Math.PI));
+    var oldLoc = nakai.loc;
+    var newLoc = gridIdAdjust(nakai.loc, dx, dy);
     if (!objectAtLocation(newLoc)) {
-        var obj = createObject("#obj:"+nakai.loc[0]+":"+nakai.loc[1], [nakai.loc[0], nakai.loc[1]], {sprite_id: 0x10b1, name: "treasure chest"});
         moveObject(nakai, newLoc);
-        setTimeout(function () {  destroyObject(obj); }, 3500);
+        var obj = createObject(null, oldLoc, {sprite_id: 0x10b1, name: "treasure chest"});
+        setTimeout(function () {  destroyObject(obj); }, 5000);
     }
-}, 1000);
+}, 2000);
 
 
 // Check if any item or creature is at this location, and return its name, or null if none
 function objectAtLocation(loc) {
-    function test(obj) { return obj.loc[0] == loc[0] && obj.loc[1] == loc[1]; }
-    var blockId = gridLocationToBlockId(loc[0], loc[1]);
-    return _.detect(contents[blockId] || [], test) || null;
+    function test(obj) { return obj.loc == loc; }
+    var chunkId = gridIdToChunkId(loc);
+    return _.detect(contents[chunkId] || [], test) || null;
 }
 
 
-// Create an object and insert it into the appropriate maps
-function createObject(id, loc, params) {
-    // TODO: assert that loc and id aren't set
+// Create an object and insert it into the appropriate maps. If id is
+// null, create a fresh id.
+var _obj_id_counter = 1;
+function createObject(id, locId, params) {
+    assert.equal(params.id, null, "Fresh object params should have no id");
+    assert.equal(params.loc, null, "Fresh object params should have no loc");
+    if (id == null) {
+        id = '#obj:' + _obj_id_counter;
+        _obj_id_counter += 1;
+    }
+    assert.equal(objects[id], null, "createObject() with id "+id+" already exists.");
     params.id = id;
     params.loc = null;
-    // TODO: assert that this id isn't used already
     objects[id] = params;
-    moveObject(params, loc);
+    moveObject(params, locId);
     return params;
 }
                      
 // Destroy an object and update the appropriate maps
 function destroyObject(obj) {
-    // TODO: assert that this id exists in the objects map
+    assert.ok(obj.id, "destroyObject() with no id " + JSON.stringify(obj));
+    assert.ok(objects[obj.id], "destroyObject() with id "+obj.id+" does not exist.");
     moveObject(obj, null);
     delete objects[obj.id];
     // obj.id = null;
@@ -187,33 +220,34 @@ function moveObject(object, to) {
     var i;
     // TODO: from and to can be other objects, not only grid locations
     var from = object.loc;
-    var fromBlock = from && gridLocationToBlockId(from[0], from[1]);
-    var toBlock = to && gridLocationToBlockId(to[0], to[1]);
+    var fromChunk = from && gridIdToChunkId(from);
+    var toChunk = to && gridIdToChunkId(to);
 
-    if (fromBlock != toBlock) {
+    object.loc = to;
+    if (fromChunk != toChunk) {
         // Remove this object from the old block
-        if (fromBlock != null) {
-            i = contents[fromBlock].indexOf(object);
-            if (i < 0) log("ERROR: object does not exist in contents map");
-            contents[fromBlock].splice(i, 1);
-            if (!events[fromBlock]) events[fromBlock] = [];
-            events[fromBlock].push({id: eventId, type: 'obj_del', obj: object});
+        if (fromChunk != null) {
+            i = contents[fromChunk].indexOf(object);
+            assert.ok(i >= 0, "ERROR: object does not exist in contents map");
+            contents[fromChunk].splice(i, 1);
+            if (!events[fromChunk]) events[fromChunk] = [];
+            events[fromChunk].push({id: eventId, type: 'del', obj: object});
             eventId++;
         }
         // Add this object to the new block
-        if (toBlock != null) {
-            if (!contents[toBlock]) contents[toBlock] = [];
-            contents[toBlock].push(object);
-            if (!events[toBlock]) events[toBlock] = [];
-            events[toBlock].push({id: eventId, type: 'obj_ins', obj: object});
+        if (toChunk != null) {
+            if (!contents[toChunk]) contents[toChunk] = [];
+            contents[toChunk].push(object);
+            if (!events[toChunk]) events[toChunk] = [];
+            events[toChunk].push({id: eventId, type: 'ins', obj: object});
             eventId++;
         }
     } else {
-        events[toBlock].push({id: eventId, type: 'obj_move', obj: object});
+        if (!events[toChunk]) events[toChunk] = [];
+        events[toChunk].push({id: eventId, type: 'move',
+                              obj: {id: object.id, loc: object.loc}});
         eventId++;
     }
-
-    object.loc = to;
 }
 
 
@@ -244,6 +278,7 @@ function Client(connectionId, log, sendMessage) {
     // The client is now subscribed to this block, so send the full contents
     function insertSubscription(blockId) {
         (contents[blockId] || []).forEach(function (obj) {
+            // TODO: be consistent with event generator, with what fields sent to client
             sendMessage({type: 'obj_ins', obj: obj});
         });
     }
@@ -275,12 +310,12 @@ function Client(connectionId, log, sendMessage) {
         
         // Send an event per message:
         eventsToSend.forEach(function (event) {
-            if (event.type == 'obj_ins') {
+            if (event.type == 'ins') {
                 sendMessage({type: 'obj_ins', obj: event.obj});
-            } else if (event.type == 'obj_del') {
-                sendMessage({type: 'obj_del', obj: {id: event.obj.id}});
-            } else if (event.type == 'obj_move') {
-                sendMessage({type: 'obj_move', obj: {id: event.obj.id, loc: event.obj.loc}});
+            } else if (event.type == 'del') {
+                sendMessage({type: 'obj_del', obj: event.obj});
+            } else if (event.type == 'move') {
+                sendMessage({type: 'obj_move', obj: event.obj});
             }
         });
         
@@ -293,7 +328,6 @@ function Client(connectionId, log, sendMessage) {
         if (message.type == 'client_identify') {
             this.object.name = message.name;
             this.object.sprite_id = message.sprite_id;
-            moveObject(this.object, clientDefaultLocation);
             sendChatToAll({from: this.object.name, sprite_id: this.object.sprite_id,
                            systemtext: " has connected.", usertext: ""});
         } else if (message.type == 'move') {
@@ -302,7 +336,7 @@ function Client(connectionId, log, sendMessage) {
                 // We're not going to allow this move
                 this.messages.push({from: this.object.name, sprite_id: this.object.sprite_id,
                                     systemtext: " blocked by ", usertext: objAtDestination.name});
-            } else {
+            } else if (this.object.loc != message.to) {
                 moveObject(this.object, message.to);
             }
 
@@ -336,6 +370,7 @@ function Client(connectionId, log, sendMessage) {
             deleted.forEach(deleteSubscription);
         } else if (message.type == 'prefetch_map') {
             // For now, just send a move_ok, which will trigger the fetching of map tiles
+            // TODO: this should share code with 'move' handler, sending ins/del events
             sendMessage({
                 type: 'move_ok',
                 loc: clientDefaultLocation,

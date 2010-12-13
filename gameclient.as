@@ -60,7 +60,7 @@ package {
     // Only present during the login, and null at other times:
     public var playerNameEntry:TextField = null;
     
-    public var playerLocation:Array = [945, 1220];
+    public var playerLocation:String = gridLocationToId(945, 1220);
     public var moving:Boolean = false;
     public var _keyQueue:KeyboardEvent = null;  // next key that we haven't processed yet
     
@@ -315,31 +315,32 @@ package {
     
     public function onEnterFrame(e:Event):void {
       var time:Number = getTimer();
-      var f:Number;
+      var f:Number, location:Object;
 
       if (animationState) {
-        if (animationState.endLocation == null) {
+        if (animationState.end == null) {
           if (time < animationState.middleTime) {
             f = (time - animationState.beginTime) / (animationState.middleTime - animationState.beginTime);
-            camera.x = (1-f) * animationState.beginLocation[0] + f * animationState.middleLocation[0];
-            camera.y = (1-f) * animationState.beginLocation[1] + f * animationState.middleLocation[1];
+            camera.x = (1-f) * animationState.begin.x + f * animationState.middle.x;
+            camera.y = (1-f) * animationState.begin.y + f * animationState.middle.y;
           } else {
             // Eek! We haven't received the response from the server
             // yet. We'll just have to wait.
           }
         } else if (time < animationState.endTime) {
           f = (time - animationState.beginTime) / (animationState.endTime - animationState.beginTime);
-          camera.x = (1-f) * animationState.beginLocation[0] + f * animationState.endLocation[0];
-          camera.y = (1-f) * animationState.beginLocation[1] + f * animationState.endLocation[1];
+          camera.x = (1-f) * animationState.begin.x + f * animationState.end.x;
+          camera.y = (1-f) * animationState.begin.y + f * animationState.end.y;
         } else {
-          camera.x = animationState.endLocation[0];
-          camera.y = animationState.endLocation[1];
+          camera.x = animationState.end.x;
+          camera.y = animationState.end.y;
           animationState = null;
           e = null;  // hack to make sure we still set x,y
         }
       } else {
-        camera.x = playerLocation[0];
-        camera.y = playerLocation[1];
+        location = gridIdToLocation(playerLocation);
+        camera.x = location.x;
+        camera.y = location.y;
         if (_keyQueue) onKeyDown(_keyQueue, true);
       }
       if (animationState != null || e == null) {
@@ -355,7 +356,8 @@ package {
       var now:Number;
       // if (!replay) Debug.trace("KEY DOWN", e.keyCode, stage.focus == null? "/stage":"/input");
 
-      var newLoc:Array = [playerLocation[0], playerLocation[1]];
+      var oldLoc:Object = gridIdToLocation(playerLocation);
+      var newLoc:Object = {x: oldLoc.x, y: oldLoc.y};
       if (e.keyCode == 13 /* Enter */) {
         if (stage.focus == inputField) {
           // End text entry by sending to server
@@ -382,22 +384,23 @@ package {
         cameraZoomTween.ease = Cubic.easeOut;
         cameraZoomTween.duration = 0.2;
         cameraZoomTween.setValue('cameraZ', 2);
-      } else if (e.keyCode == 39 /* RIGHT */) { newLoc[0] += WALK_STEP; }
-      else if (e.keyCode == 37 /* LEFT */) { newLoc[0] -= WALK_STEP; }
-      else if (e.keyCode == 38 /* UP */) { newLoc[1] -= WALK_STEP; }
-      else if (e.keyCode == 40 /* DOWN */) { newLoc[1] += WALK_STEP; }
-          
-      if (newLoc[0] != playerLocation[0] || newLoc[1] != playerLocation[1]) {
+      } else if (e.keyCode == 39 /* RIGHT */) { newLoc.x += WALK_STEP; }
+      else if (e.keyCode == 37 /* LEFT */) { newLoc.x -= WALK_STEP; }
+      else if (e.keyCode == 38 /* UP */) { newLoc.y -= WALK_STEP; }
+      else if (e.keyCode == 40 /* DOWN */) { newLoc.y += WALK_STEP; }
+
+      var newLocId:String = gridLocationToId(newLoc.x, newLoc.y);
+      if (newLocId != playerLocation) {
         if (replay) _keyQueue = null;
         if (!moving && animationState == null) {
           e.updateAfterEvent();
           moving = true;
-          client.sendMessage({type: 'move', from: playerLocation, to: newLoc});
+          client.sendMessage({type: 'move', from: playerLocation, to: newLocId});
           now = getTimer();
           animationState = {
-            beginLocation: playerLocation,
-            middleLocation: [0.9*newLoc[0]+0.1*playerLocation[0], 0.9*newLoc[1]+0.1*playerLocation[1]],
-            endLocation: null,  // null until we get the ok from the server
+            begin: {x: oldLoc.x, y: oldLoc.y},
+            middle: {x: 0.9*newLoc.x+0.1*oldLoc.x, y: 0.9*newLoc.y+0.1*oldLoc.y},
+            end: null,  // null until we get the ok from the server
             beginTime: now,
             middleTime: now + 0.9*WALK_TIME,
             endTime: now + WALK_TIME
@@ -420,7 +423,7 @@ package {
       
       moving = false;
       if (animationState) {
-        animationState.endLocation = message.loc;
+        animationState.end = gridIdToLocation(message.loc);
       } else {
         // If we don't have an animation state, but received
         // move_ok, we'll just jump to the new location.
@@ -433,7 +436,7 @@ package {
       // or if that block is already requested.
       if (message.chunks_ins != null) {
         for each (chunk_id in message.chunks_ins) {
-            if (representations[chunk_id] == null) {
+            if (!representations[chunk_id]) {
               representations[chunk_id] = {};  // Pending
               client.sendMessage({type: 'map_tiles', chunk_id: chunk_id});
             }
@@ -466,12 +469,12 @@ package {
       bitmap.x = mapScale * message.left;
       bitmap.y = mapScale * message.top;
         
-      representations[chunk_id].bitmap = bitmap;
+      representations[message.chunk_id].bitmap = bitmap;
       terrainLayer.addChild(bitmap);
     }
 
     private function handle_obj_ins(message:Object, _:ByteArray):void {
-      var bitmap:Bitmap;
+      var bitmap:Bitmap, location:Object;
       
       bitmap = new Bitmap(new BitmapData(playerBitmap.width, playerBitmap.height, true, 0x00000000));
       if (message.obj.sprite_id >= 0x1000) {
@@ -479,8 +482,9 @@ package {
       } else {
         char_spritesheet.drawToBitmap(message.obj.sprite_id, bitmap.bitmapData, playerStyle);
       }
-      bitmap.x = mapScale * message.obj.loc[0] - playerStyle.padding;
-      bitmap.y = mapScale * message.obj.loc[1] - playerStyle.padding;
+      location = gridIdToLocation(message.obj.loc);
+      bitmap.x = mapScale * location.x - playerStyle.padding;
+      bitmap.y = mapScale * location.y - playerStyle.padding;
       objectLayer.addChild(bitmap);
       if (message.obj.id == myCreatureId) bitmap.visible = false;  // it's me!
       if (objects[message.obj.id] != null) Debug.trace("ERROR: obj_ins, already exists at ", message.obj.id);
@@ -489,19 +493,20 @@ package {
     }
 
     private function handle_obj_del(message:Object, _:ByteArray):void {
-      if (objects[message.obj.id] == null) Debug.trace("ERROR: obj_del, none at ", message.obj.id);
+      if (!objects[message.obj.id]) Debug.trace("ERROR: obj_del, none at ", message.obj.id);
       objectLayer.removeChild(representations[message.obj.id]);
       delete objects[message.obj.id];
       delete representations[message.obj.id];
     }
 
     private function handle_obj_move(message:Object, _:ByteArray):void {
-      var bitmap:Bitmap;
+      var bitmap:Bitmap, location:Object;
       
-      if (objects[message.obj.id] == null) Debug.trace("ERROR: obj_move, none at ", message.obj.id);
+      if (!objects[message.obj.id]) Debug.trace("ERROR: obj_move, none at ", message.obj.id);
       bitmap = representations[message.obj.id];
-      bitmap.x = mapScale * message.obj.loc[0] - playerStyle.padding;
-      bitmap.y = mapScale * message.obj.loc[1] - playerStyle.padding;
+      location = gridIdToLocation(message.obj.loc);
+      bitmap.x = mapScale * location.x - playerStyle.padding;
+      bitmap.y = mapScale * location.y - playerStyle.padding;
     }
     
     private function handle_messages(message:Object, _:ByteArray):void {
@@ -520,7 +525,19 @@ package {
                        + " recv: " + client._bytesPerSecond + " bytes/second");
     }
 
-    
+
+    // Convert grid coordinates to an id
+    public function gridLocationToId(x:int, y:int):String {
+      return '@grid:' + x + ':' + y;
+    }
+
+    // Convert grid id to coordinates
+    public function gridIdToLocation(gridId:String):Object {
+      var parse:Array = gridId.split(':');
+      return {x: parseInt(parse[1]), y: parseInt(parse[2])};
+    }
+
+
     // Initialize the colorMap array to map tileId into color
     public function buildColorMap():void {
       // Interpolate between A and B, frac=1.0 means B
