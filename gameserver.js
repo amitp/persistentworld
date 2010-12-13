@@ -121,6 +121,16 @@ function chunkBounds(chunkId) {
 }
 
 
+function mapTileAt(gridId) {
+    var location = gridIdToLocation(gridId);
+    if (0 <= location.x && location.x < map.width
+        && 0 <= location.y && location.y < map.height) {
+        return map.tiles[location.x * map.height + location.y];
+    } else {
+        return null;
+    }
+}
+    
 function constructMapTiles(left, right, top, bottom) {
     // Clip the rectangle to the map and make sure bounds are sane
     if (left < 0) left = 0;
@@ -171,7 +181,8 @@ setInterval(function () {
     var dy = Math.round(Math.sin(0.25*angle*2*Math.PI));
     var oldLoc = nakai.loc;
     var newLoc = gridIdAdjust(nakai.loc, dx, dy);
-    if (!objectAtLocation(newLoc)) {
+    var waterAtDestination = (mapTileAt(newLoc) == 0);
+    if (!objectAtLocation(newLoc) && !waterAtDestination) {
         moveObject(nakai, newLoc);
         var obj = createObject(null, oldLoc, {sprite_id: 0x10b1, name: "treasure chest"});
         setTimeout(function () {  destroyObject(obj); }, 5000);
@@ -332,10 +343,12 @@ function Client(connectionId, log, sendMessage) {
                            systemtext: " has connected.", usertext: ""});
         } else if (message.type == 'move') {
             var objAtDestination = objectAtLocation(message.to);
-            if (objAtDestination && objAtDestination != this.object) {
+            var waterAtDestination = (mapTileAt(message.to) == 0);
+            if (objAtDestination || waterAtDestination) {
                 // We're not going to allow this move
+                var reason = waterAtDestination? "water" : objAtDestination.name;
                 this.messages.push({from: this.object.name, sprite_id: this.object.sprite_id,
-                                    systemtext: " blocked by ", usertext: objAtDestination.name});
+                                    systemtext: " blocked by ", usertext: reason});
             } else if (this.object.loc != message.to) {
                 moveObject(this.object, message.to);
             }
