@@ -91,7 +91,18 @@ function gridIdToChunkId(gridId) {
     var loc = gridIdToLocation(gridId);
     return gridLocationToChunkId(loc.x, loc.y);
 }
-        
+
+function locIdToContainerId(locId) {
+    // locId can be a gridId or an objId
+    if (locId == null) {
+        return null;
+    } else if (locId.substr(0, 5) == '@grid') {
+        return gridIdToChunkId(locId);
+    } else {
+        return locId;
+    }
+}
+
 function chunksSurroundingLocation(gridId) {
     // TODO: we're currently generating a square but it would be
     // better for the network (spread map loads out over time) if this
@@ -169,9 +180,8 @@ var objects = {};  // map from object id to object
 
 
 // TEST: create a few items; HACK: use sprite_id >= 0x1000 as alternate spritesheet
-createObject('#obj1', gridLocationToId(940, 1215), {sprite_id: 0x10ce, name: "tree"});
-createObject('#obj2', gridLocationToId(940, 1217), {sprite_id: 0x10ce, name: "tree"});
-createObject('#obj3', gridLocationToId(911, 1222), {sprite_id: 0x10b1, name: "treasure chest"});
+createObject('#obj1', gridLocationToId(940, 1215), {sprite_id: 0x10ce, name: "tree", blocking: true});
+createObject('#obj2', gridLocationToId(940, 1217), {sprite_id: 0x10ce, name: "tree", blocking: true});
 
 // TEST: create a creature that moves around by itself
 nakai = createObject('#nakai', gridLocationToId(942, 1220), {name: 'Nakai', sprite_id: 0x72});
@@ -181,8 +191,7 @@ setInterval(function () {
     var dy = Math.round(Math.sin(0.25*angle*2*Math.PI));
     var oldLoc = nakai.loc;
     var newLoc = gridIdAdjust(nakai.loc, dx, dy);
-    var waterAtDestination = (mapTileAt(newLoc) == 0);
-    if (!objectAtLocation(newLoc) && !waterAtDestination) {
+    if (!obstacleAtLocation(newLoc)) {
         moveObject(nakai, newLoc);
         var obj = createObject(null, oldLoc, {sprite_id: 0x10b1, name: "treasure chest"});
         setTimeout(function () {  destroyObject(obj); }, 5000);
@@ -190,11 +199,22 @@ setInterval(function () {
 }, 2000);
 
 
-// Check if any item or creature is at this location, and return its name, or null if none
+// Check if any item or creature is at this location, and return it or null if none
 function objectAtLocation(loc) {
     function test(obj) { return obj.loc == loc; }
     var chunkId = gridIdToChunkId(loc);
     return _.detect(contents[chunkId] || [], test) || null;
+}
+
+// Check if the map or any object would block movement to this location
+function obstacleAtLocation(loc) {
+    function test(obj) { return obj.loc == loc && obj.blocking; }
+    var chunkId = gridIdToChunkId(loc);
+    var firstObstacle = _.detect(contents[chunkId] || [], test);
+    if (firstObstacle) { return firstObstacle; }
+    var waterAtDestination = (mapTileAt(loc) == 0);
+    if (waterAtDestination) { return {name: "water"}; }
+    return null;
 }
 
 
@@ -231,8 +251,8 @@ function moveObject(object, to) {
     var i;
     // TODO: from and to can be other objects, not only grid locations
     var from = object.loc;
-    var fromChunk = from && gridIdToChunkId(from);
-    var toChunk = to && gridIdToChunkId(to);
+    var fromChunk = locIdToContainerId(from);
+    var toChunk = locIdToContainerId(to);
 
     object.loc = to;
     if (fromChunk != toChunk) {
@@ -267,9 +287,16 @@ function moveObject(object, to) {
 // eventIdPointer of all clients.
 
 
+function sendChatToAll(chatMessage) {
+    for (var clientId in clients) {
+        clients[clientId].messages.push(chatMessage);
+    }
+}
+
+
 // Class to handle a single game client
 function Client(connectionId, log, sendMessage) {
-    this.object = {id: connectionId, name: '??', sprite_id: null, loc: null};
+    this.object = {id: connectionId, name: '', sprite_id: null, loc: null};
     this.messages = [];
     this.subscribedTo = [];  // list of block ids
     this.eventIdPointer = eventId;  // this event and newer remain to be processed
@@ -280,12 +307,6 @@ function Client(connectionId, log, sendMessage) {
     // Tell the client which of the object ids is itself
     sendMessage({type: 'server_identify', id: connectionId});
     
-    function sendChatToAll(chatMessage) {
-        for (var clientId in clients) {
-            clients[clientId].messages.push(chatMessage);
-        }
-    }
-
     // The client is now subscribed to this block, so send the full contents
     function insertSubscription(blockId) {
         (contents[blockId] || []).forEach(function (obj) {
@@ -339,16 +360,26 @@ function Client(connectionId, log, sendMessage) {
         if (message.type == 'client_identify') {
             this.object.name = message.name;
             this.object.sprite_id = message.sprite_id;
+            // Tell this player about everyone else
+            var myCreature = this.object;
+            var otherPlayers = _.pluck(_.select(_.pluck(_.values(clients), 'object'),
+                                                function (c) {
+                                                    return c != myCreature && c.name != '';
+                                                }),
+                                       'name');
+            if (otherPlayers.length > 0) {
+                this.messages.push({systemtext: "Connected: ",
+                                    usertext: otherPlayers.join(", ")});
+            }
+            // Tell everyone else that this player connected
             sendChatToAll({from: this.object.name, sprite_id: this.object.sprite_id,
                            systemtext: " has connected.", usertext: ""});
         } else if (message.type == 'move') {
-            var objAtDestination = objectAtLocation(message.to);
-            var waterAtDestination = (mapTileAt(message.to) == 0);
-            if (objAtDestination || waterAtDestination) {
+            var obstacle = obstacleAtLocation(message.to);
+            if (obstacle) {
                 // We're not going to allow this move
-                var reason = waterAtDestination? "water" : objAtDestination.name;
                 this.messages.push({from: this.object.name, sprite_id: this.object.sprite_id,
-                                    systemtext: " blocked by ", usertext: reason});
+                                    systemtext: " blocked by ", usertext: obstacle.name});
             } else if (this.object.loc != message.to) {
                 moveObject(this.object, message.to);
             }
