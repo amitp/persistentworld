@@ -513,10 +513,14 @@ package {
       var chat:Object, iconSize:Number, icon:Bitmap;
       
       for each (chat in message.messages) {
-          iconSize = 2*playerIconStyle.padding + 8*playerIconStyle.scale;
-          icon = new Bitmap(new BitmapData(iconSize, iconSize, true, 0xffff00ff));
-          char_spritesheet.drawToBitmap(chat.sprite_id, icon.bitmapData, playerIconStyle);
-          outputMessages.addChat(icon, chat.from, chat.systemtext, chat.usertext);
+          if (chat.from) {
+            iconSize = 2*playerIconStyle.padding + 8*playerIconStyle.scale;
+            icon = new Bitmap(new BitmapData(iconSize, iconSize, true, 0xffff00ff));
+            char_spritesheet.drawToBitmap(chat.sprite_id, icon.bitmapData, playerIconStyle);
+            outputMessages.addChat(icon, chat.from, chat.systemtext, chat.usertext);
+          } else {
+            outputMessages.addSystemText(chat.systemtext + chat.usertext);
+          }
         }
     }
 
