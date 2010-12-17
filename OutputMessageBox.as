@@ -2,6 +2,14 @@
 // Author: amitp@cs.stanford.edu
 // License: MIT
 
+// Features:
+// * Shows player icon
+// * Shows player name in bold
+// * Word wraps underneath player name, not under icon (icons serve as bullet points)
+// * System messages look different from regular messages
+// * Works with Unicode characters (including CJK)
+// TODO: add hover over player icon
+// TODO: add menu on player icon click
 // TODO: add scrollback capability
 
 package {
