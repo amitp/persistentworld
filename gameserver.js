@@ -2,6 +2,8 @@
 // amitp@cs.stanford.edu
 // License: MIT
 
+"use strict";
+
 require.paths.unshift('/Users/amitp/Projects/src/underscore')
 var fs = require('fs');
 var util = require('util');
@@ -46,7 +48,7 @@ buildMap();
 // Chunks are blocks of the map. The server simulates objects one
 // chunk at a time. The client subscribes to chunks. Events in the
 // subscribed areas are sent to the client.  A chunk id looks like
-// "@chunk:x:y".  A grid location id looks like "@grid:x:y".
+// "@chunk:x:y".  Within that chunk the grid location is stored in x: y:
 var chunkSize = 16;
 
 function chunkLocationToId(chunkX, chunkY) {
@@ -64,59 +66,23 @@ function chunkIdToLocation(chunkId) {
     return {chunkX: parseInt(parse[1]), chunkY: parseInt(parse[2])};
 }
 
-function gridLocationToId(x, y) {
-    assert.ok(0 <= x && x < map.width && 0 <= y && y < map.height,
-              "ERROR: gridLocationToId(" + x + "," + y + ") out of range");
-    return '@grid:' + x + ':' + y;
-}
-
-function gridIdToLocation(gridId) {
-    assert.equal(typeof gridId, 'string');
-    var parse = gridId.split(':');
-    assert.equal(parse.length, 3);
-    assert.equal(parse[0], '@grid');
-    return {x: parseInt(parse[1]), y: parseInt(parse[2])};
-}
-
-function gridIdAdjust(gridId, dx, dy) {
-    var location = gridIdToLocation(gridId);
-    return gridLocationToId(location.x+dx, location.y+dy);
-}
-
-function gridLocationToChunkId(x, y) {
+function coordToChunkId(x, y) {
     return chunkLocationToId(Math.floor(x / chunkSize), Math.floor(y / chunkSize));
 }
 
-function gridIdToChunkId(gridId) {
-    var loc = gridIdToLocation(gridId);
-    return gridLocationToChunkId(loc.x, loc.y);
-}
-
-function locIdToContainerId(locId) {
-    // locId can be a gridId or an objId
-    if (locId == null) {
-        return null;
-    } else if (locId.substr(0, 5) == '@grid') {
-        return gridIdToChunkId(locId);
-    } else {
-        return locId;
-    }
-}
-
-function chunksSurroundingLocation(gridId) {
+function chunksSurroundingCoord(x, y) {
     // TODO: we're currently generating a square but it would be
     // better for the network (spread map loads out over time) if this
     // were a circular region.  TODO: hysteresis would help too
     var radius = 9;  // Approximate half-size of client viewport
-    var location = gridIdToLocation(gridId);
-    var left = Math.floor((location.x - radius) / chunkSize);
-    var right = Math.ceil((location.x + radius) / chunkSize);
-    var top = Math.floor((location.y - radius) / chunkSize);
-    var bottom = Math.ceil((location.y + radius) / chunkSize);
+    var left = Math.floor((x - radius) / chunkSize);
+    var right = Math.ceil((x + radius) / chunkSize);
+    var top = Math.floor((y - radius) / chunkSize);
+    var bottom = Math.ceil((y + radius) / chunkSize);
     var chunks = [];
-    for (var x = left; x < right; x++) {
-        for (var y = top; y < bottom; y++) {
-            chunks.push(chunkLocationToId(x, y));
+    for (var cx = left; cx < right; cx++) {
+        for (var cy = top; cy < bottom; cy++) {
+            chunks.push(chunkLocationToId(cx, cy));
         }
     }
     // TODO: chunks should be sorted by distance from location
@@ -132,11 +98,9 @@ function chunkBounds(chunkId) {
 }
 
 
-function mapTileAt(gridId) {
-    var location = gridIdToLocation(gridId);
-    if (0 <= location.x && location.x < map.width
-        && 0 <= location.y && location.y < map.height) {
-        return map.tiles[location.x * map.height + location.y];
+function mapTileAt(x, y) {
+    if (0 <= x && x < map.width && 0 <= y && y < map.height) {
+        return map.tiles[x * map.height + y];
     } else {
         return null;
     }
@@ -169,7 +133,7 @@ function constructMapTiles(left, right, top, bottom) {
 
 // Server state
 var clients = {};  // map from the client.id to the Client object
-var clientDefaultLocation = gridLocationToId(945, 1220);
+var clientDefaultLocation = {x: 945, y: 1220};
 
 // TODO: build event manager
 var eventId = 1;  // each client tracks last eventId seen
@@ -180,59 +144,66 @@ var objects = {};  // map from object id to object
 
 
 // TEST: create a few items; HACK: use sprite_id >= 0x1000 as alternate spritesheet
-createObject('#obj1', gridLocationToId(940, 1215), {sprite_id: 0x10ce, name: "tree", blocking: true});
-createObject('#obj2', gridLocationToId(940, 1217), {sprite_id: 0x10ce, name: "tree", blocking: true});
+createObject('#obj1', [940, 1215], {sprite_id: 0x10ce, name: "tree", blocking: true});
+createObject('#obj2', [940, 1217], {sprite_id: 0x10ce, name: "tree", blocking: true});
 
 // TEST: create a creature that moves around by itself
-nakai = createObject('#nakai', gridLocationToId(942, 1220), {name: 'Nakai', sprite_id: 0x72});
+nakai = createObject('#nakai', [942, 1220], {name: 'Nakai', sprite_id: 0x72});
 setInterval(function () {
     var angle = Math.floor(4*Math.random());
     var dx = Math.round(Math.cos(0.25*angle*2*Math.PI));
     var dy = Math.round(Math.sin(0.25*angle*2*Math.PI));
-    var oldLoc = nakai.loc;
-    var newLoc = gridIdAdjust(nakai.loc, dx, dy);
-    if (!obstacleAtLocation(newLoc)) {
-        moveObject(nakai, newLoc);
-        var obj = createObject(null, oldLoc, {sprite_id: 0x10b1, name: "treasure chest"});
-        setTimeout(function () {  destroyObject(obj); }, 5000);
+    var oldLoc = {x: nakai.x, y: nakai.y};
+    var newLoc = {x: nakai.x + dx, y: nakai.y + dy};
+    if (!obstacleAtCoord(newLoc.x, newLoc.y)) {
+        moveObject(nakai, null, newLoc.x, newLoc.y);
+        if (Math.random() < 0.01) {
+            var obj = createObject(null, '#nakai', {sprite_id: 0x10b1, name: "treasure chest"});
+            moveObject(obj, null, oldLoc.x, oldLoc.y);
+            sendChatToAll({from: nakai.name, sprite_id: nakai.sprite_id,
+                           systemtext: " dropped ", usertext: obj.name});
+            setTimeout(function () { destroyObject(obj); }, 10000);
+        }
     }
 }, 2000);
 
 
-// Check if any item or creature is at this location, and return it or null if none
-function objectAtLocation(loc) {
-    function test(obj) { return obj.loc == loc; }
-    var chunkId = gridIdToChunkId(loc);
-    return _.detect(contents[chunkId] || [], test) || null;
-}
-
 // Check if the map or any object would block movement to this location
-function obstacleAtLocation(loc) {
-    function test(obj) { return obj.loc == loc && obj.blocking; }
-    var chunkId = gridIdToChunkId(loc);
+function obstacleAtCoord(x, y) {
+    var chunkId = coordToChunkId(x, y);
+    function test(obj) {
+        return obj.loc == chunkId && obj.x == x && obj.y == y && obj.blocking;
+    }
     var firstObstacle = _.detect(contents[chunkId] || [], test);
     if (firstObstacle) { return firstObstacle; }
-    var waterAtDestination = (mapTileAt(loc) == 0);
+    var waterAtDestination = (mapTileAt(x, y) == 0);
     if (waterAtDestination) { return {name: "water"}; }
     return null;
 }
 
 
 // Create an object and insert it into the appropriate maps. If id is
-// null, create a fresh id.
+// null, create a fresh id.  If location is a 2-element array, treat it as
+// [grid x, grid y] and turn it into a loc + subloc.
 var _obj_id_counter = 1;
-function createObject(id, locId, params) {
+function createObject(id, location, params) {
+    var x = null, y = null;
     assert.equal(params.id, null, "Fresh object params should have no id");
     assert.equal(params.loc, null, "Fresh object params should have no loc");
     if (id == null) {
         id = '#obj:' + _obj_id_counter;
         _obj_id_counter += 1;
     }
+    if (typeof location != 'string') {
+        x = location[0];
+        y = location[1];
+        location = coordToChunkId(x, y);
+    }
     assert.equal(objects[id], null, "createObject() with id "+id+" already exists.");
     params.id = id;
     params.loc = null;
     objects[id] = params;
-    moveObject(params, locId);
+    moveObject(params, location, x, y);
     return params;
 }
                      
@@ -246,37 +217,52 @@ function destroyObject(obj) {
 }
                      
 // Move a creature/player, and update the creatures mapping too. The
-// original location or the target location can be null for creature birth/death.
-function moveObject(object, to) {
+// original location or the target location can be null for creature
+// birth/death.  If to==null but x,y != null then to will be set to
+// the chunk containing coord x,y.
+function moveObject(object, to, x, y) {
     var i;
-    // TODO: from and to can be other objects, not only grid locations
     var from = object.loc;
-    var fromChunk = locIdToContainerId(from);
-    var toChunk = locIdToContainerId(to);
+
+    if (to == null && x != null && y != null) {
+        to = coordToChunkId(x, y);
+    }
 
     object.loc = to;
-    if (fromChunk != toChunk) {
+    if (x != null || y != null) {
+        object.x = x;
+        object.y = y;
+    } else {
+        delete object.x;
+        delete object.y;
+    }
+    
+    if (from != to) {
         // Remove this object from the old block
-        if (fromChunk != null) {
-            i = contents[fromChunk].indexOf(object);
+        if (from != null) {
+            i = contents[from].indexOf(object);
             assert.ok(i >= 0, "ERROR: object does not exist in contents map");
-            contents[fromChunk].splice(i, 1);
-            if (!events[fromChunk]) events[fromChunk] = [];
-            events[fromChunk].push({id: eventId, type: 'del', obj: object});
+            contents[from].splice(i, 1);
+            if (!events[from]) events[from] = [];
+            events[from].push({id: eventId, type: 'del', obj: {id: object.id}});
             eventId++;
         }
         // Add this object to the new block
-        if (toChunk != null) {
-            if (!contents[toChunk]) contents[toChunk] = [];
-            contents[toChunk].push(object);
-            if (!events[toChunk]) events[toChunk] = [];
-            events[toChunk].push({id: eventId, type: 'ins', obj: object});
+        if (to != null) {
+            if (!contents[to]) contents[to] = [];
+            contents[to].push(object);
+            if (!events[to]) events[to] = [];
+            events[to].push({id: eventId, type: 'ins', obj: object});
             eventId++;
         }
     } else {
-        if (!events[toChunk]) events[toChunk] = [];
-        events[toChunk].push({id: eventId, type: 'move',
-                              obj: {id: object.id, loc: object.loc}});
+        if (!events[to]) events[to] = [];
+        objStub = {id: object.id, loc: object.loc};
+        if (x != null || y != null) {
+            objStub.x = x;
+            objStub.y = y;
+        }
+        events[to].push({id: eventId, type: 'move', obj: objStub});
         eventId++;
     }
 }
@@ -350,6 +336,8 @@ function Client(connectionId, log, sendMessage) {
                 sendMessage({type: 'obj_move', obj: event.obj});
             }
         });
+        // TODO: combine del+ins into a move
+        // TODO: flatten del and move to not have an 'obj' field at all
         
         // Reset the pointer to indicate that we're current
         this.eventIdPointer = eventId;
@@ -375,27 +363,27 @@ function Client(connectionId, log, sendMessage) {
             sendChatToAll({from: this.object.name, sprite_id: this.object.sprite_id,
                            systemtext: " has connected.", usertext: ""});
         } else if (message.type == 'move') {
-            var obstacle = obstacleAtLocation(message.to);
+            var obstacle = obstacleAtCoord(message.x, message.y);
             if (obstacle) {
                 // We're not going to allow this move
                 this.messages.push({from: this.object.name, sprite_id: this.object.sprite_id,
                                     systemtext: " blocked by ", usertext: obstacle.name});
-            } else if (this.object.loc != message.to) {
-                moveObject(this.object, message.to);
+            } else {
+                moveObject(this.object, null, message.x, message.y);
             }
 
             // NOTE: we must flush all events before subscribing to
-            // new blocks, or we'll end up sending things twice. For
-            // example if a creature was created in a block and then
-            // we subscribe to the block, we don't want to first send
+            // new chunks, or we'll end up sending things twice. For
+            // example if a creature was created in a chunk and then
+            // we subscribe to the chunk, we don't want to first send
             // the creature at subscription, and then send the
             // creature again that was in the event log. Similar
             // problems exist for unsubscriptions.  TODO: investigate
-            // per-block event ids.
+            // per-chunk event ids.
             this.sendAllEvents();
             
             // The list of chunks that the client should be subscribed to
-            var chunks = chunksSurroundingLocation(this.object.loc);
+            var chunks = chunksSurroundingCoord(this.object.x, this.object.y);
             // Compute the difference between the new list and the old list
             var inserted = setDifference(chunks, this.subscribedTo);
             var deleted = setDifference(this.subscribedTo, chunks);
@@ -403,7 +391,8 @@ function Client(connectionId, log, sendMessage) {
             this.subscribedTo = chunks;
 
             // The reply will tell the client where the player is now
-            var reply = {type: 'move_ok', loc: this.object.loc};
+            var reply = {type: 'move_ok', loc: this.object.loc,
+                         x: this.object.x, y: this.object.y};
             // Set the new list on the client side
             if (inserted.length > 0) reply.chunks_ins = inserted;
             if (deleted.length > 0) reply.chunks_del = deleted;
@@ -417,8 +406,10 @@ function Client(connectionId, log, sendMessage) {
             // TODO: this should share code with 'move' handler, sending ins/del events
             sendMessage({
                 type: 'move_ok',
-                loc: clientDefaultLocation,
-                chunks: chunksSurroundingLocation(clientDefaultLocation)
+                loc: coordToChunkId(clientDefaultLocation.x, clientDefaultLocation.y),
+                x: clientDefaultLocation.x,
+                y: clientDefaultLocation.y,
+                chunks: chunksSurroundingLocation(clientDefaultLocation.x, clientDefaultLocation.y)
             });
         } else if (message.type == 'map_tiles') {
             var blockRange = chunkBounds(message.chunk_id);
