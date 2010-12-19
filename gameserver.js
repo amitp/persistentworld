@@ -8,6 +8,8 @@ require.paths.unshift('/Users/amitp/Projects/src/underscore')
 var fs = require('fs');
 var util = require('util');
 var assert = require('assert');
+var net = require('net');
+var repl = require('repl');
 var server = require('./Server');
 var _ = require('underscore');
 
@@ -454,7 +456,12 @@ function Client(connectionId, log, sendMessage) {
 }
 
 
-
-
+net.createServer(function (socket) {
+    var context = repl.start("gameserver> ", socket).context;
+    context.clients = clients;
+    context.events = events;
+    context.contents = contents;
+    context.objects = objects;
+}).listen(5001);
 
 server.go(Client, {'/debug': 'gameclient-dbg.swf', '/world': 'gameclient.swf'});
