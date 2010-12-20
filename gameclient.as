@@ -19,7 +19,6 @@ package {
     static public var TILES_ON_SCREEN:int = 13;
     static public var TILE_PADDING:int = 3;
     static public var WALK_TIME:Number = 200;
-    static public var WALK_STEP:int = 1;
     
     // The map area contains all the tile blocks and other players,
     // positioned in absolute coordinate space. Moving the camera
@@ -62,7 +61,6 @@ package {
     
     public var playerLocation:Point = new Point(945, 1220);
     public var moving:Boolean = false;
-    public var _keyQueue:KeyboardEvent = null;  // next key that we haven't processed yet
     
     public var animationState:Object = null;
 
@@ -108,11 +106,13 @@ package {
                                     {onComplete: function():void { clickToFocusMessage.visible =
                                                                    (clickToFocusMessage.alpha != 0.0); }});
       stage.addEventListener(Event.ACTIVATE, function (e:Event):void {
+          forgetKeysHeldDown();
           tween.duration = 0.15;
           tween.setValue('alpha', 0.0);
           if (playerNameEntry != null) stage.focus = playerNameEntry;
         });
       stage.addEventListener(Event.DEACTIVATE, function (e:Event):void {
+          forgetKeysHeldDown();
           clickToFocusMessage.visible = true;
           tween.duration = 1.5;
           tween.setValue('alpha', 1.0);
@@ -306,6 +306,7 @@ package {
       addEventListener(Event.ENTER_FRAME, onEnterFrame);
       
       stage.addEventListener(KeyboardEvent.KEY_DOWN, onKeyDown);
+      stage.addEventListener(KeyboardEvent.KEY_UP, onKeyUp);
         
       client.sendMessage({type: 'client_identify', name: playerName, sprite_id: spriteId});
       client.sendMessage({type: 'move', x: playerLocation.x, y: playerLocation.y});
@@ -335,12 +336,12 @@ package {
           camera.x = animationState.end.x;
           camera.y = animationState.end.y;
           animationState = null;
-          e = null;  // hack to make sure we still set x,y
+          e = null;  // HACK: make sure we still set x,y
         }
       } else {
         camera.x = playerLocation.x;
         camera.y = playerLocation.y;
-        if (_keyQueue) onKeyDown(_keyQueue, true);
+        checkKeyMovement();
       }
       if (animationState != null || e == null) {
         mapArea.x = -mapScale * camera.x;
@@ -351,14 +352,69 @@ package {
     }
 
 
-    public function onKeyDown(e:KeyboardEvent, replay:Boolean = false):void {
-      var now:Number;
-      // if (!replay) Debug.trace("KEY DOWN", e.keyCode, stage.focus == null? "/stage":"/input");
+    // Arrow key handling: we track which keys are held down and
+    // trigger movement. Since we only allow movement in 4 cardinal
+    // directions, and it's possible for both up and right to be held
+    // down, we'll alternate. The _lastMovementAxis variable tracks
+    // which axis we moved along last.  TODO: consider just allowing
+    // diagonal movement (quirk: since both keys aren't pressed at
+    // exactly the same time, we end up triggering non-diagonal
+    // movement for one space before diagonal kicks in; we'd want to
+    // delay movement until onEnterFrame to capture the diagonal).
+    private var _keyDown:Array = [];  // keyCode -> boolean
+    private var _lastMovementAxis:String = 'H';  // 'V' or 'H'
 
-      // TODO: simplify?
-      var oldLoc:Object = {x: playerLocation.x, y: playerLocation.y};
-      var newLoc:Object = {x: oldLoc.x, y: oldLoc.y};
+    public function forgetKeysHeldDown():void {
+      _keyDown = [];
+    }
+    
+    public function checkKeyMovement():void {
+      var now:Number;
+      var dx:int = 0, dy:int = 0;
+      
+      // We won't move unless the map has keyboard focus, and we're not moving
+      if (stage.focus != null) return;
+      if (moving) return;
+      if (animationState != null) return;
+      
+      if (_keyDown[39] /* RIGHT */) { dx += 1; }
+      if (_keyDown[37] /* LEFT */) { dx -= 1; }
+      if (_keyDown[38] /* UP */) { dy -= 1; }
+      if (_keyDown[40] /* DOWN */) { dy += 1; }
+
+      if (dx != 0 && dy != 0) {
+        // We don't want to move along both x and y, so pick one.
+        if (_lastMovementAxis == 'V') { dy = 0; }
+        else { dx = 0; }
+      }
+      
+      if (dx != 0 || dy != 0) {
+        moving = true;
+        _lastMovementAxis = (dx != 0)? 'H' : 'V';
+        client.sendMessage({type: 'move', x: playerLocation.x + dx, y: playerLocation.y + dy});
+        now = getTimer();
+        animationState = {
+          begin: {x: playerLocation.x, y: playerLocation.y},
+          middle: {x: playerLocation.x + 0.9*dx, y: playerLocation.y + 0.9*dy},
+          end: null,  // null until we get the ok from the server
+          beginTime: now,
+          middleTime: now + 0.9*WALK_TIME,
+          endTime: now + WALK_TIME
+        };
+      }
+    }
+    
+    public function onKeyUp(e:KeyboardEvent):void {
+      _keyDown[e.keyCode] = false;
+      checkKeyMovement();
+    }
+    
+    public function onKeyDown(e:KeyboardEvent, replay:Boolean = false):void {
+      _keyDown[e.keyCode] = true;
+      checkKeyMovement();
+      
       if (e.keyCode == 13 /* Enter */) {
+        forgetKeysHeldDown();
         if (stage.focus == inputField) {
           // End text entry by sending to server
           client.sendMessage({type: 'message', message: inputField.text});
@@ -371,7 +427,10 @@ package {
       }
 
       // While entering text, other keys don't apply
-      if (stage.focus == inputField) return;
+      if (stage.focus == inputField) {
+        forgetKeysHeldDown();
+        return;
+      }
 
       if (e.keyCode == 32 /* Space */) {
         // TODO: check if we're already jumping, and either ignore, or double jump
@@ -384,31 +443,6 @@ package {
         cameraZoomTween.ease = Cubic.easeOut;
         cameraZoomTween.duration = 0.2;
         cameraZoomTween.setValue('cameraZ', 2);
-      } else if (e.keyCode == 39 /* RIGHT */) { newLoc.x += WALK_STEP; }
-      else if (e.keyCode == 37 /* LEFT */) { newLoc.x -= WALK_STEP; }
-      else if (e.keyCode == 38 /* UP */) { newLoc.y -= WALK_STEP; }
-      else if (e.keyCode == 40 /* DOWN */) { newLoc.y += WALK_STEP; }
-
-      if (newLoc.x != oldLoc.x || newLoc.y != oldLoc.y) {
-        if (replay) _keyQueue = null;
-        if (!moving && animationState == null) {
-          e.updateAfterEvent();
-          moving = true;
-          client.sendMessage({type: 'move', x: newLoc.x, y: newLoc.y});
-          now = getTimer();
-          animationState = {
-            begin: {x: oldLoc.x, y: oldLoc.y},
-            middle: {x: 0.9*newLoc.x+0.1*oldLoc.x, y: 0.9*newLoc.y+0.1*oldLoc.y},
-            end: null,  // null until we get the ok from the server
-            beginTime: now,
-            middleTime: now + 0.9*WALK_TIME,
-            endTime: now + WALK_TIME
-          };
-        } else {
-          if (_keyQueue == null) {
-            _keyQueue = e;
-          }
-        }
       }
     }
 
@@ -444,10 +478,7 @@ package {
           }
       }
       // TODO: clear map bitmap for blocks in chunks_del
-        
-      // HACK: if a movement was delayed because we were already
-      // moving, trigger the new movement
-      if (_keyQueue) onKeyDown(_keyQueue, true);
+      checkKeyMovement();
     }
 
     private function handle_map_tiles(message:Object, binaryPayload:ByteArray):void {
