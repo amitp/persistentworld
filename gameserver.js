@@ -32,10 +32,10 @@ function buildMap() {
     map.tiles = new Buffer(map.width*map.height);
     for (var i = 0; i < map.tiles.length; i++) {
         var code = overrides[i] >> 4;
-        if (code == 1 || code == 5 || code == 6 || code == 7 || code == 8) {
+        if (code === 1 || code === 5 || code === 6 || code === 7 || code === 8) {
             // water
             map.tiles[i] = 0;
-        } else if (code == 9 || code == 10 || code == 11 || code == 12) {
+        } else if (code === 9 || code === 10 || code === 11 || code === 12) {
             // road/bridge
             map.tiles[i] = 1;
         } else {
@@ -65,7 +65,7 @@ function chunkIdToLocation(chunkId) {
     var parse = chunkId.split(':');
     assert.equal(parse.length, 3);
     assert.equal(parse[0], '@chunk');
-    return {chunkX: parseInt(parse[1]), chunkY: parseInt(parse[2])};
+    return {chunkX: parseInt(parse[1], 10), chunkY: parseInt(parse[2], 10)};
 }
 
 function coordToChunkId(x, y) {
@@ -174,11 +174,11 @@ setInterval(function () {
 function obstacleAtCoord(x, y) {
     var chunkId = coordToChunkId(x, y);
     function test(obj) {
-        return obj.loc == chunkId && obj.x == x && obj.y == y && obj.blocking;
+        return obj.loc === chunkId && obj.x === x && obj.y === y && obj.blocking;
     }
     var firstObstacle = _.detect(contents[chunkId] || [], test);
     if (firstObstacle) { return firstObstacle; }
-    var waterAtDestination = (mapTileAt(x, y) == 0);
+    var waterAtDestination = (mapTileAt(x, y) === 0);
     if (waterAtDestination) { return {name: "water"}; }
     return null;
 }
@@ -187,16 +187,19 @@ function obstacleAtCoord(x, y) {
 // Create an object and insert it into the appropriate maps. If id is
 // null, create a fresh id.  If location is a 2-element array, treat it as
 // [grid x, grid y] and turn it into a loc + subloc.
-var _obj_id_counter = 1;
 function createObject(id, location, params) {
-    var x = null, y = null;
+    var x, y;
     assert.equal(params.id, null, "Fresh object params should have no id");
     assert.equal(params.loc, null, "Fresh object params should have no loc");
-    if (id == null) {
-        id = '#obj:' + _obj_id_counter;
-        _obj_id_counter += 1;
+    assert.ok(typeof location === 'string'
+              || (location instanceof Array && location.length === 2),
+             "Fresh object location should be str or coord [x,y].");
+    
+    if (id === null) {
+        id = '#obj:' + createObject.nextId;
+        createObject.nextId += 1;
     }
-    if (typeof location != 'string') {
+    if (typeof location !== 'string') {
         x = location[0];
         y = location[1];
         location = coordToChunkId(x, y);
@@ -208,6 +211,7 @@ function createObject(id, location, params) {
     moveObject(params, location, x, y);
     return params;
 }
+createObject.nextId = 1;  // static var
                      
 // Destroy an object and update the appropriate maps
 function destroyObject(obj) {
@@ -215,55 +219,53 @@ function destroyObject(obj) {
     assert.ok(objects[obj.id], "destroyObject() with id "+obj.id+" does not exist.");
     moveObject(obj, null);
     delete objects[obj.id];
-    // obj.id = null;
+    obj.id = null;
 }
                      
 // Move a creature/player, and update the creatures mapping too. The
 // original location or the target location can be null for creature
-// birth/death.  If to==null but x,y != null then to will be set to
-// the chunk containing coord x,y.
+// birth/death.  The x,y parameters are optional. If to === null but
+// x,y !== undefined then to will be set to the chunk containing x,y.
 function moveObject(object, to, x, y) {
     var i;
     var from = object.loc;
 
-    if (to == null && x != null && y != null) {
+    assert.ok((typeof to === 'string') || to === null);
+    assert.ok((typeof from === 'string') || from === null);
+    assert.ok((typeof x === 'number') || x === undefined);
+    assert.ok((typeof y === 'number') || y === undefined);
+    
+    if (to === null && x !== undefined && y !== undefined) {
         to = coordToChunkId(x, y);
     }
 
     object.loc = to;
-    if (x != null || y != null) {
-        object.x = x;
-        object.y = y;
-    } else {
-        delete object.x;
-        delete object.y;
-    }
+    object.x = x;
+    object.y = y;
     
-    if (from != to) {
+    if (from !== to) {
         // Remove this object from the old block
-        if (from != null) {
+        if (from !== null) {
             i = contents[from].indexOf(object);
             assert.ok(i >= 0, "ERROR: object does not exist in contents map");
             contents[from].splice(i, 1);
-            if (!events[from]) events[from] = [];
+            if (events[from] === undefined) events[from] = [];
             events[from].push({id: eventId, type: 'del', obj: {id: object.id}});
             eventId++;
         }
         // Add this object to the new block
-        if (to != null) {
-            if (!contents[to]) contents[to] = [];
+        if (to !== null) {
+            if (contents[to] === undefined) contents[to] = [];
             contents[to].push(object);
-            if (!events[to]) events[to] = [];
+            if (events[to] === undefined) events[to] = [];
             events[to].push({id: eventId, type: 'ins', obj: object});
             eventId++;
         }
     } else {
-        if (!events[to]) events[to] = [];
+        if (events[to] === undefined) events[to] = [];
         objStub = {id: object.id, loc: object.loc};
-        if (x != null || y != null) {
-            objStub.x = x;
-            objStub.y = y;
-        }
+        objStub.x = x;
+        objStub.y = y;
         events[to].push({id: eventId, type: 'move', obj: objStub});
         eventId++;
     }
@@ -311,7 +313,7 @@ function Client(connectionId, log, sendMessage) {
     }
 
     // Send all pending events from sim blocks
-    this.sendAllEvents = function() {
+    this.sendAllEvents = function () {
         // Send back events in the subscribed blocks:
         var eventsNewerThan = this.eventIdPointer;
         var eventsToSend = [];
@@ -330,11 +332,11 @@ function Client(connectionId, log, sendMessage) {
         
         // Send an event per message:
         eventsToSend.forEach(function (event) {
-            if (event.type == 'ins') {
+            if (event.type === 'ins') {
                 sendMessage({type: 'obj_ins', obj: event.obj});
-            } else if (event.type == 'del') {
+            } else if (event.type === 'del') {
                 sendMessage({type: 'obj_del', obj: event.obj});
-            } else if (event.type == 'move') {
+            } else if (event.type === 'move') {
                 sendMessage({type: 'obj_move', obj: event.obj});
             }
         });
@@ -343,18 +345,18 @@ function Client(connectionId, log, sendMessage) {
         
         // Reset the pointer to indicate that we're current
         this.eventIdPointer = eventId;
-    }
+    };
     
 
-    this.handleMessage = function(message, binaryMessage) {
-        if (message.type == 'client_identify') {
+    this.handleMessage = function (message, binaryMessage) {
+        if (message.type === 'client_identify') {
             this.object.name = message.name;
             this.object.sprite_id = message.sprite_id;
             // Tell this player about everyone else
             var myCreature = this.object;
             var otherPlayers = _.pluck(_.select(_.pluck(_.values(clients), 'object'),
                                                 function (c) {
-                                                    return c != myCreature && c.name != '';
+                                                    return c !== myCreature && c.name !== '';
                                                 }),
                                        'name');
             if (otherPlayers.length > 0) {
@@ -364,7 +366,7 @@ function Client(connectionId, log, sendMessage) {
             // Tell everyone else that this player connected
             sendChatToAll({from: this.object.name, sprite_id: this.object.sprite_id,
                            systemtext: " has connected.", usertext: ""});
-        } else if (message.type == 'move') {
+        } else if (message.type === 'move') {
             var obstacle = obstacleAtCoord(message.x, message.y);
             if (obstacle) {
                 // We're not going to allow this move
@@ -403,7 +405,7 @@ function Client(connectionId, log, sendMessage) {
             // Send any additional data related to the change in subscriptions.
             inserted.forEach(insertSubscription);
             deleted.forEach(deleteSubscription);
-        } else if (message.type == 'prefetch_map') {
+        } else if (message.type === 'prefetch_map') {
             // For now, just send a move_ok, which will trigger the fetching of map tiles
             // TODO: this should share code with 'move' handler, sending ins/del events
             sendMessage({
@@ -413,7 +415,7 @@ function Client(connectionId, log, sendMessage) {
                 y: clientDefaultLocation.y,
                 chunks: chunksSurroundingLocation(clientDefaultLocation.x, clientDefaultLocation.y)
             });
-        } else if (message.type == 'map_tiles') {
+        } else if (message.type === 'map_tiles') {
             var blockRange = chunkBounds(message.chunk_id);
             var mapTiles = constructMapTiles(blockRange.left, blockRange.right, blockRange.top, blockRange.bottom);
             sendMessage({
@@ -424,7 +426,7 @@ function Client(connectionId, log, sendMessage) {
                 top: mapTiles.top,
                 bottom: mapTiles.bottom,
             }, mapTiles.binaryPayload);
-        } else if (message.type == 'ping') {
+        } else if (message.type === 'ping') {
             // Send back all events that have occurred since the last ping
             sendMessage({type: 'pong', timestamp: message.timestamp});
 
@@ -435,7 +437,7 @@ function Client(connectionId, log, sendMessage) {
             }
 
             this.sendAllEvents();
-        } else if (message.type == 'message') {
+        } else if (message.type === 'message') {
             // TODO: handle special commands
             // TODO: handle empty messages (after spaces stripped)
             sendChatToAll({from: this.object.name, sprite_id: this.object.sprite_id,
@@ -443,16 +445,16 @@ function Client(connectionId, log, sendMessage) {
         } else {
             log('  -- unknown message type');
         }
-    }
+    };
 
-    this.handleDisconnect = function() {
-        if (this.object.sprite_id != null) {
+    this.handleDisconnect = function () {
+        if (this.object.sprite_id !== null) {
             sendChatToAll({from: this.object.name, sprite_id: this.object.sprite_id,
                            systemtext: " has disconnected.", usertext: ""});
             moveObject(this.object, null);
         }
         delete clients[connectionId];
-    }
+    };
 }
 
 
