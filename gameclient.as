@@ -18,7 +18,8 @@ package {
   public class gameclient extends Sprite {
     static public var TILES_ON_SCREEN:int = 13;
     static public var TILE_PADDING:int = 3;
-    static public var WALK_TIME:Number = 200;
+    static public var WALK_ADJACENT_TIME:Number = 150;
+    static public var WALK_DIAGONAL_TIME:Number = WALK_ADJACENT_TIME * Math.sqrt(2);
     
     // The map area contains all the tile blocks and other players,
     // positioned in absolute coordinate space. Moving the camera
@@ -353,23 +354,18 @@ package {
 
 
     // Arrow key handling: we track which keys are held down and
-    // trigger movement. Since we only allow movement in 4 cardinal
-    // directions, and it's possible for both up and right to be held
-    // down, we'll alternate. The _lastMovementAxis variable tracks
-    // which axis we moved along last.  TODO: consider just allowing
-    // diagonal movement (quirk: since both keys aren't pressed at
+    // trigger movement. TODO: since both keys aren't pressed at
     // exactly the same time, we end up triggering non-diagonal
     // movement for one space before diagonal kicks in; we'd want to
-    // delay movement until onEnterFrame to capture the diagonal).
+    // delay movement until onEnterFrame to capture the diagonal.
     private var _keyDown:Array = [];  // keyCode -> boolean
-    private var _lastMovementAxis:String = 'H';  // 'V' or 'H'
 
     public function forgetKeysHeldDown():void {
       _keyDown = [];
     }
     
     public function checkKeyMovement():void {
-      var now:Number;
+      var now:Number, walkTime:Number;
       var dx:int = 0, dy:int = 0;
       
       // We won't move unless the map has keyboard focus, and we're not moving
@@ -382,15 +378,14 @@ package {
       if (_keyDown[38] /* UP */) { dy -= 1; }
       if (_keyDown[40] /* DOWN */) { dy += 1; }
 
-      if (dx != 0 && dy != 0) {
-        // We don't want to move along both x and y, so pick one.
-        if (_lastMovementAxis == 'V') { dy = 0; }
-        else { dx = 0; }
-      }
-      
       if (dx != 0 || dy != 0) {
+        if (dx != 0 && dy != 0) {
+          walkTime = WALK_DIAGONAL_TIME;
+        } else {
+          walkTime = WALK_ADJACENT_TIME;
+        }
+        
         moving = true;
-        _lastMovementAxis = (dx != 0)? 'H' : 'V';
         client.sendMessage({type: 'move', x: playerLocation.x + dx, y: playerLocation.y + dy});
         now = getTimer();
         animationState = {
@@ -398,8 +393,8 @@ package {
           middle: {x: playerLocation.x + 0.9*dx, y: playerLocation.y + 0.9*dy},
           end: null,  // null until we get the ok from the server
           beginTime: now,
-          middleTime: now + 0.9*WALK_TIME,
-          endTime: now + WALK_TIME
+          middleTime: now + 0.9*walkTime,
+          endTime: now + walkTime
         };
       }
     }
