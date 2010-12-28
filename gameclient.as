@@ -68,7 +68,8 @@ package {
     // Map objects:
     public var contents:Object = {};  // {block or obj id: [obj, ...]}
     public var objects:Object = {};  // {obj id: obj}
-    public var representations:Object = {};  // {block or obj id: Bitmap object}
+    public var tweens:Object = {};  // {obj id: GTween}
+    public var representations:Object = {};  // {block or obj id: Bitmap}
 
     public var colorMap:Array = [];
     public var client:Client = new Client();
@@ -80,6 +81,7 @@ package {
     private var handlers:Object = {
       'server_identify': handle_server_identify,
       'move_ok': handle_move_ok,
+      's_jump': handle_s_jump,
       'map_tiles': handle_map_tiles,
       'obj_ins': handle_obj_ins,
       'obj_del': handle_obj_del,
@@ -438,6 +440,7 @@ package {
         cameraZoomTween.ease = Cubic.easeOut;
         cameraZoomTween.duration = 0.2;
         cameraZoomTween.setValue('cameraZ', 2);
+        client.sendMessage({type: 'c_jump'});
       }
     }
 
@@ -476,6 +479,20 @@ package {
       checkKeyMovement();
     }
 
+    private function handle_s_jump(message:Object, binaryPayload:ByteArray):void {
+      var tween:GTween;
+      if (message.id != myCreatureId && representations[message.id]) {
+        tween = new GTween(representations[message.id], 0.2, {}, {});
+        tween.onComplete = function():void {
+          tween.onComplete = null;
+          tween.ease = Cubic.easeIn;
+          tween.setValues({scaleX: 1.0, scaleY: 1.0});
+        };
+        tween.ease = Cubic.easeOut;
+        tween.setValues({scaleX: 1.1, scaleY: 1.1});
+      }
+    }
+    
     private function handle_map_tiles(message:Object, binaryPayload:ByteArray):void {
       var i:int, tileId:int, x:int, y:int;
       var bmp:BitmapData, bitmap:Bitmap;
@@ -515,6 +532,7 @@ package {
       if (message.obj.id == myCreatureId) bitmap.visible = false;  // it's me!
       if (objects[message.obj.id] != null) Debug.trace("ERROR: obj_ins, already exists at ", message.obj.id);
       objects[message.obj.id] = message.obj;
+      tweens[message.obj.id] = null;
       representations[message.obj.id] = bitmap;
     }
 
@@ -522,16 +540,21 @@ package {
       if (!objects[message.obj.id]) Debug.trace("ERROR: obj_del, none at ", message.obj.id);
       objectLayer.removeChild(representations[message.obj.id]);
       delete objects[message.obj.id];
+      delete tweens[message.obj.id];
       delete representations[message.obj.id];
     }
 
     private function handle_obj_move(message:Object, _:ByteArray):void {
-      var bitmap:Bitmap;
+      var tween:GTween;
       
       if (!objects[message.obj.id]) Debug.trace("ERROR: obj_move, none at ", message.obj.id);
-      bitmap = representations[message.obj.id];
-      bitmap.x = mapScale * message.obj.x - playerStyle.padding;
-      bitmap.y = mapScale * message.obj.y - playerStyle.padding;
+      tween = tweens[message.obj.id];
+      if (tween == null) {
+        tween = new GTween(representations[message.obj.id], 0.2, {}, {});
+        tweens[message.obj.id] = tween;
+      }
+      tween.setValue('x', mapScale * message.obj.x - playerStyle.padding);
+      tween.setValue('y', mapScale * message.obj.y - playerStyle.padding);
     }
     
     private function handle_messages(message:Object, _:ByteArray):void {

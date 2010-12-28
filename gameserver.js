@@ -289,6 +289,7 @@ function Client(connectionId, log, sendMessage) {
     this.object = {id: connectionId, name: '', sprite_id: null, loc: null};
     this.messages = [];
     this.subscribedTo = [];  // list of block ids
+    this.sendMessage = sendMessage;
     this.eventIdPointer = eventId;  // this event and newer remain to be processed
     
     if (clients[connectionId]) log('ERROR: client id already in clients map');
@@ -405,6 +406,12 @@ function Client(connectionId, log, sendMessage) {
             // Send any additional data related to the change in subscriptions.
             inserted.forEach(insertSubscription);
             deleted.forEach(deleteSubscription);
+        } else if (message.type == 'c_jump') {
+            // No gameplay; just a visual we send to other clients
+            // NOTE: this is the only place we directly sendMessage with other clients
+            for (var clientId in clients) {
+                clients[clientId].sendMessage({type: 's_jump', id: this.object.id});
+            }
         } else if (message.type === 'prefetch_map') {
             // For now, just send a move_ok, which will trigger the fetching of map tiles
             // TODO: this should share code with 'move' handler, sending ins/del events
