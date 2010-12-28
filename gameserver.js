@@ -413,7 +413,7 @@ function Client(connectionId, log, sendMessage) {
                 loc: coordToChunkId(clientDefaultLocation.x, clientDefaultLocation.y),
                 x: clientDefaultLocation.x,
                 y: clientDefaultLocation.y,
-                chunks: chunksSurroundingLocation(clientDefaultLocation.x, clientDefaultLocation.y)
+                chunks: chunksSurroundingCoord(clientDefaultLocation.x, clientDefaultLocation.y)
             });
         } else if (message.type === 'map_tiles') {
             var blockRange = chunkBounds(message.chunk_id);
