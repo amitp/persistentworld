@@ -537,24 +537,24 @@ package {
     }
 
     private function handle_obj_del(message:Object, _:ByteArray):void {
-      if (!objects[message.obj.id]) Debug.trace("ERROR: obj_del, none at ", message.obj.id);
-      objectLayer.removeChild(representations[message.obj.id]);
-      delete objects[message.obj.id];
-      delete tweens[message.obj.id];
-      delete representations[message.obj.id];
+      if (!objects[message.obj_id]) Debug.trace("ERROR: obj_del, none at ", message.obj_id);
+      objectLayer.removeChild(representations[message.obj_id]);
+      delete objects[message.obj_id];
+      delete tweens[message.obj_id];
+      delete representations[message.obj_id];
     }
 
     private function handle_obj_move(message:Object, _:ByteArray):void {
       var tween:GTween;
       
-      if (!objects[message.obj.id]) Debug.trace("ERROR: obj_move, none at ", message.obj.id);
-      tween = tweens[message.obj.id];
+      if (!objects[message.obj_id]) Debug.trace("ERROR: obj_move, none at ", message.obj_id);
+      tween = tweens[message.obj_id];
       if (tween == null) {
-        tween = new GTween(representations[message.obj.id], 0.2, {}, {});
-        tweens[message.obj.id] = tween;
+        tween = new GTween(representations[message.obj_id], 0.2, {}, {});
+        tweens[message.obj_id] = tween;
       }
-      tween.setValue('x', mapScale * message.obj.x - playerStyle.padding);
-      tween.setValue('y', mapScale * message.obj.y - playerStyle.padding);
+      tween.setValue('x', mapScale * message.x - playerStyle.padding);
+      tween.setValue('y', mapScale * message.y - playerStyle.padding);
     }
     
     private function handle_messages(message:Object, _:ByteArray):void {

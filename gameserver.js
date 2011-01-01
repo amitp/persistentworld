@@ -137,13 +137,27 @@ function constructMapTiles(left, right, top, bottom) {
 var clients = {};  // map from the client.id to the Client object
 var clientDefaultLocation = {x: 945, y: 1220};
 
-// TODO: build event manager
-var eventId = 1;  // each client tracks last eventId seen
-var events = {};  // map from chunk id to list of events (ins, del, move)
-
 var contents = {};  // map from location id to set of objects at that location
 var objects = {};  // map from object id to object
 
+// Send a move event to clients. If the object is coming into
+// existence or going out of existence, send an ins or del event
+// instead.
+function sendMoveEvent(object, src) {
+    var dst = object.loc;
+    _.values(clients).forEach(function (client) {
+        var subscribedToSrc = client.subscribedTo.indexOf(src) >= 0;
+        var subscribedToDst = client.subscribedTo.indexOf(dst) >= 0;
+        
+        if (subscribedToSrc && subscribedToDst) {
+            client.events.push({type: 'obj_move', obj_id: object.id, x: object.x, y: object.y});
+        } else if (subscribedToDst) {
+            client.events.push({type: 'obj_ins', obj: object});
+        } else if (subscribedToSrc) {
+            client.events.push({type: 'obj_del', obj_id: object.id});
+        }
+    });
+}
 
 // TEST: create a few items; HACK: use sprite_id >= 0x1000 as alternate spritesheet
 createObject('#obj1', [940, 1215], {sprite_id: 0x10ce, name: "tree", blocking: true});
@@ -224,57 +238,40 @@ function destroyObject(obj) {
                      
 // Move a creature/player, and update the creatures mapping too. The
 // original location or the target location can be null for creature
-// birth/death.  The x,y parameters are optional. If to === null but
-// x,y !== undefined then to will be set to the chunk containing x,y.
-function moveObject(object, to, x, y) {
+// birth/death.  The x,y parameters are optional. If dst === null but
+// x,y !== undefined then dst will be set to the chunk containing x,y.
+function moveObject(object, dst, x, y) {
     var i;
-    var from = object.loc;
+    var src = object.loc;
 
-    assert.ok((typeof to === 'string') || to === null);
-    assert.ok((typeof from === 'string') || from === null);
+    assert.ok((typeof dst === 'string') || dst === null);
+    assert.ok((typeof src === 'string') || src === null);
     assert.ok((typeof x === 'number') || x === undefined);
     assert.ok((typeof y === 'number') || y === undefined);
     
-    if (to === null && x !== undefined && y !== undefined) {
-        to = coordToChunkId(x, y);
+    if (dst === null && x !== undefined && y !== undefined) {
+        dst = coordToChunkId(x, y);
     }
 
-    object.loc = to;
-    object.x = x;
-    object.y = y;
-    
-    if (from !== to) {
+    if (src !== dst) {
         // Remove this object from the old block
-        if (from !== null) {
-            i = contents[from].indexOf(object);
+        if (src !== null) {
+            i = contents[src].indexOf(object);
             assert.ok(i >= 0, "ERROR: object does not exist in contents map");
-            contents[from].splice(i, 1);
-            if (events[from] === undefined) events[from] = [];
-            events[from].push({id: eventId, type: 'del', obj: {id: object.id}});
-            eventId++;
+            contents[src].splice(i, 1);
         }
         // Add this object to the new block
-        if (to !== null) {
-            if (contents[to] === undefined) contents[to] = [];
-            contents[to].push(object);
-            if (events[to] === undefined) events[to] = [];
-            events[to].push({id: eventId, type: 'ins', obj: object});
-            eventId++;
+        if (dst !== null) {
+            if (contents[dst] === undefined) contents[dst] = [];
+            contents[dst].push(object);
         }
-    } else {
-        if (events[to] === undefined) events[to] = [];
-        objStub = {id: object.id, loc: object.loc};
-        objStub.x = x;
-        objStub.y = y;
-        events[to].push({id: eventId, type: 'move', obj: objStub});
-        eventId++;
     }
+
+    object.loc = dst;
+    object.x = x;
+    object.y = y;
+    sendMoveEvent(object, src);
 }
-
-
-// TODO: the event queues in each block will keep getting longer;
-// prune them by removing events older than the MIN of the
-// eventIdPointer of all clients.
 
 
 function sendChatToAll(chatMessage) {
@@ -289,8 +286,8 @@ function Client(connectionId, log, sendMessage) {
     this.object = {id: connectionId, name: '', sprite_id: null, loc: null};
     this.messages = [];
     this.subscribedTo = [];  // list of block ids
+    this.events = [];
     this.sendMessage = sendMessage;
-    this.eventIdPointer = eventId;  // this event and newer remain to be processed
     
     if (clients[connectionId]) log('ERROR: client id already in clients map');
     clients[connectionId] = this;
@@ -309,43 +306,15 @@ function Client(connectionId, log, sendMessage) {
     // The client no longer subscribes to this block, so remove contents
     function deleteSubscription(blockId) {
         (contents[blockId] || []).forEach(function (obj) {
-            sendMessage({type: 'obj_del', obj: {id: obj.id}});
+            sendMessage({type: 'obj_del', obj_id: obj.id});
         });
     }
 
     // Send all pending events from sim blocks
     this.sendAllEvents = function () {
-        // Send back events in the subscribed blocks:
-        var eventsNewerThan = this.eventIdPointer;
-        var eventsToSend = [];
-        this.subscribedTo.forEach(function (blockId) {
-            (events[blockId] || []).forEach(function (event) {
-                if (event.id >= eventsNewerThan) {
-                    eventsToSend.push(event);
-                }
-            });
-        });
-        
-        // Sort the events by id. That way a del followed by an
-        // ins in another block will be handled properly by the
-        // client.
-        eventsToSend.sort(function (a, b) { return a.id - b.id; });
-        
         // Send an event per message:
-        eventsToSend.forEach(function (event) {
-            if (event.type === 'ins') {
-                sendMessage({type: 'obj_ins', obj: event.obj});
-            } else if (event.type === 'del') {
-                sendMessage({type: 'obj_del', obj: event.obj});
-            } else if (event.type === 'move') {
-                sendMessage({type: 'obj_move', obj: event.obj});
-            }
-        });
-        // TODO: combine del+ins into a move
-        // TODO: flatten del and move to not have an 'obj' field at all
-        
-        // Reset the pointer to indicate that we're current
-        this.eventIdPointer = eventId;
+        this.events.forEach(function (event) { sendMessage(event); } );
+        this.events = [];
     };
     
 
@@ -383,8 +352,7 @@ function Client(connectionId, log, sendMessage) {
             // we subscribe to the chunk, we don't want to first send
             // the creature at subscription, and then send the
             // creature again that was in the event log. Similar
-            // problems exist for unsubscriptions.  TODO: investigate
-            // per-chunk event ids.
+            // problems exist for unsubscriptions.
             this.sendAllEvents();
             
             // The list of chunks that the client should be subscribed to
@@ -468,7 +436,6 @@ function Client(connectionId, log, sendMessage) {
 net.createServer(function (socket) {
     var context = repl.start("gameserver> ", socket).context;
     context.clients = clients;
-    context.events = events;
     context.contents = contents;
     context.objects = objects;
 }).listen(5001);
