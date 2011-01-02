@@ -159,16 +159,12 @@ function sendMoveEvent(object, src) {
     });
 }
 
-// TEST: create a few items; HACK: use sprite_id >= 0x1000 as alternate spritesheet
-createObject('#obj1', [940, 1215], {sprite_id: 0x10ce, name: "tree", blocking: true});
-createObject('#obj2', [940, 1217], {sprite_id: 0x10ce, name: "tree", blocking: true});
-
 // TEST: create a creature that moves around by itself
 nakai = createObject('#nakai', [942, 1220], {name: 'Nakai', sprite_id: 0x72});
 setInterval(function () {
-    var angle = Math.floor(4*Math.random());
-    var dx = Math.round(Math.cos(0.25*angle*2*Math.PI));
-    var dy = Math.round(Math.sin(0.25*angle*2*Math.PI));
+    var angle = Math.floor(8*Math.random());
+    var dx = Math.round(Math.cos(0.125*angle*2*Math.PI));
+    var dy = Math.round(Math.sin(0.125*angle*2*Math.PI));
     var oldLoc = {x: nakai.x, y: nakai.y};
     var newLoc = {x: nakai.x + dx, y: nakai.y + dy};
     if (!obstacleAtCoord(newLoc.x, newLoc.y)) {
@@ -181,7 +177,7 @@ setInterval(function () {
             setTimeout(function () { destroyObject(obj); }, 10000);
         }
     }
-}, 2000);
+}, 1500);
 
 
 // Check if the map or any object would block movement to this location
@@ -439,5 +435,27 @@ net.createServer(function (socket) {
     context.contents = contents;
     context.objects = objects;
 }).listen(5001);
+
+
+
+// TEST: create a few items; HACK: use sprite_id >= 0x1000 as alternate spritesheet
+createObject('#obj1', [940, 1215], {sprite_id: 0x10cf, name: "tree", blocking: true});
+createObject('#obj2', [940, 1217], {sprite_id: 0x10ce, name: "tree", blocking: true});
+(function () {
+    var x, y;
+    for (x = 932; x <= 939; x++) {
+        for (y = 1218; y <= 1223; y++) {
+            if ((x == 932 && y == 1222) || (x == 939 && y == 1219)) {
+                // Doorway
+            } else if (x == 932 || x == 939 || y == 1218 || y == 1223) {
+                // Wall
+                createObject(null, [x, y], {sprite_id: 0x10c5, name: "wall", blocking: true});
+            } else {
+                // Floor
+            }
+        }
+    }
+})();
+
 
 server.go(Client, {'/debug': 'gameclient-dbg.swf', '/world': 'gameclient.swf'});
