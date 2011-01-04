@@ -441,6 +441,9 @@ net.createServer(function (socket) {
 // TEST: create a few items; HACK: use sprite_id >= 0x1000 as alternate spritesheet
 createObject('#obj1', [940, 1215], {sprite_id: 0x10cf, name: "tree", blocking: true});
 createObject('#obj2', [940, 1217], {sprite_id: 0x10ce, name: "tree", blocking: true});
+createObject('#chair1', [936, 1220], {sprite_id: 0x10bc, name: "chair"});
+createObject('#table1', [935, 1220], {sprite_id: 0x10b9, name: "table", blocking: true});
+createObject('#chair2', [934, 1220], {sprite_id: 0x10bb, name: "chair"});
 (function () {
     var x, y;
     for (x = 932; x <= 939; x++) {
