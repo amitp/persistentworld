@@ -370,12 +370,20 @@ function Client(connectionId, log, sendMessage) {
             // Send any additional data related to the change in subscriptions.
             inserted.forEach(insertSubscription);
             deleted.forEach(deleteSubscription);
+
+            // HACK: actions related to chairs
+            if ((this.object.x == 936 || this.object.x == 934) && this.object.y == 1220) {
+                // Send back a chair action
+                sendMessage({type: 's_actions', actions: [{obj: '#table1', verb: 'order', text: "Order a drink"}]});
+            }
         } else if (message.type == 'c_jump') {
             // No gameplay; just a visual we send to other clients
             // NOTE: this is the only place we directly sendMessage with other clients
             for (var clientId in clients) {
                 clients[clientId].sendMessage({type: 's_jump', id: this.object.id});
             }
+        } else if (message.type == 'c_action') {
+            // TODO: not implemented yet
         } else if (message.type === 'prefetch_map') {
             // For now, just send a move_ok, which will trigger the fetching of map tiles
             // TODO: this should share code with 'move' handler, sending ins/del events

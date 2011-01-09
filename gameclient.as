@@ -77,11 +77,15 @@ package {
     public var inputField:TextField = new TextField();
     public var outputMessages:OutputMessageBox = new OutputMessageBox(400, 200);
 
+    // Actions: an array from keyCode to the action object sent by the server
+    public var keyActions:Array = [];
+    
     // Server message handlers
     private var handlers:Object = {
       'server_identify': handle_server_identify,
       'move_ok': handle_move_ok,
       's_jump': handle_s_jump,
+      's_actions': handle_s_actions,
       'map_tiles': handle_map_tiles,
       'obj_ins': handle_obj_ins,
       'obj_del': handle_obj_del,
@@ -388,6 +392,7 @@ package {
         }
         
         moving = true;
+        keyActions = [];  // invalidate actions because they are for the current location
         client.sendMessage({type: 'move', x: playerLocation.x + dx, y: playerLocation.y + dy});
         now = getTimer();
         animationState = {
@@ -429,6 +434,15 @@ package {
         return;
       }
 
+      if (keyActions[e.keyCode]) {
+        Debug.trace("ACTION " + JSON.encode(keyActions[e.keyCode]));
+        client.sendMessage({
+              type: 'c_action',
+              verb: keyActions[e.keyCode].verb,
+              obj: keyActions[e.keyCode].obj
+              });
+      }
+      
       if (e.keyCode == 32 /* Space */) {
         // TODO: check if we're already jumping, and either ignore, or double jump
         cameraZoomTween.onComplete = function():void {
@@ -490,6 +504,22 @@ package {
         };
         tween.ease = Cubic.easeOut;
         tween.setValues({scaleX: 1.1, scaleY: 1.1});
+      }
+    }
+
+    private function handle_s_actions(message:Object, _:ByteArray):void {
+      // For now, display the action menu in the chat window. TODO:
+      // display the set of actions in a separate UI area, and clear
+      // it each time the menu is rewritten. TODO: if the player
+      // hasn't moved, try to reuse the same keys for recently
+      // displayed actions.
+      var action:Object, i:int, keyCode:int;
+      keyActions = [];
+      for (i = 0; i < message.actions.length; i++) {
+        action = message.actions[i];
+        keyCode = '1'.charCodeAt(0) + i;
+        keyActions[keyCode] = action;
+        outputMessages.addChat(null, "Press [" + String.fromCharCode(keyCode) + "]", " to ", action.text);
       }
     }
     
